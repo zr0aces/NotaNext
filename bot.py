@@ -16,6 +16,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("printbot")
 
+VERSION = "1.0.0"
 DATA_DIR = "data"
 
 # Per-chat print options: {chat_id: {"color": bool, "copies": int}}
@@ -403,7 +404,7 @@ def main():
         )
     )
 
-    logger.info("PrintBot starting with allowed chat IDs: %s", allowed_chat_ids or "ALL")
+    logger.info("PrintBot v%s starting with allowed chat IDs: %s", VERSION, allowed_chat_ids or "ALL")
     application.run_polling()
 
 

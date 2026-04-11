@@ -1,5 +1,8 @@
 # PrintBot
 
+[![Release](https://img.shields.io/github/v/release/zr0aces/PrintBot)](https://github.com/zr0aces/PrintBot/releases)
+[![Docker](https://img.shields.io/badge/ghcr.io-zr0aces%2Fprintbot-blue)](https://github.com/zr0aces/PrintBot/pkgs/container/printbot)
+
 ## Overview
 
 PrintBot is a Telegram bot that sends photos and documents straight to a CUPS-connected printer. Run it on a Raspberry Pi (or any Linux box) as a systemd service or Docker container, then print anything from your phone by just sending it to the bot.
@@ -124,6 +127,26 @@ Before sending a file, you can text the bot with options for the next print:
 | `bw 2x` | Combine options |
 
 Options apply to the **next** file only, then reset to defaults (colour, 1 copy).
+
+---
+
+## Releases
+
+Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PrintBot/pkgs/container/printbot) when a version tag is pushed.
+
+Pull the latest release:
+
+```bash
+docker pull ghcr.io/zr0aces/printbot:latest
+```
+
+Or pin to a specific version:
+
+```bash
+docker pull ghcr.io/zr0aces/printbot:1.0.0
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ---
 
