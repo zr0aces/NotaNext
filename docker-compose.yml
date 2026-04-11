@@ -1,7 +1,10 @@
 services:
   printbot:
-    build: .
-    image: printbot
+    build:
+      context: .
+      args:
+        VERSION: "1.0.0"
+    image: ghcr.io/zr0aces/printbot:1.0.0
     container_name: printbot
     restart: always
     devices:

@@ -1,8 +1,10 @@
+import json
 import os
 import shutil
 import subprocess
 import time
 import logging
+import urllib.request
 
 from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -14,15 +16,28 @@ logging.basicConfig(
 
 logger = logging.getLogger("printbot")
 
+VERSION = "1.0.0"
 DATA_DIR = "data"
+
+# Per-chat print options: {chat_id: {"color": bool, "copies": int}}
+print_options = {}
+
+# Maximum characters of stderr to include in error replies
+MAX_STDERR_LENGTH = 120
 
 HELP_TEXT = (
     "📠 *PrintBot Commands*\n\n"
     "/start — Show the welcome message\n"
     "/help — Show this help message\n"
     "/status — Check printer availability\n"
+    "/jobs — Show the print queue\n"
+    "/cancel — Cancel all print jobs\n"
     "/clean — Delete cached files (allowed users only)\n\n"
-    "Send a *photo* or *document* to print it."
+    "Send a *photo* or *document* to print it.\n\n"
+    "*Print options* — send before your file:\n"
+    "  `bw` or `gray` — black & white\n"
+    "  `2x`, `3x`, `4x` — multiple copies\n"
+    "  `bw 2x` — combine options"
 )
 
 
@@ -114,6 +129,111 @@ async def clean(update, context):
     )
 
 
+async def jobs_command(update, context):
+    """Show the current CUPS print queue."""
+    lpstat = shutil.which("lpstat")
+    if not lpstat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ CUPS client tools (`lpstat`) not found on this system.",
+        )
+        return
+
+    try:
+        result = subprocess.run(
+            [lpstat, "-o"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            msg = f"🖨️ Print queue:\n```\n{result.stdout.strip()}\n```"
+        else:
+            msg = "📭 No jobs in queue"
+    except subprocess.TimeoutExpired:
+        msg = "⚠️ Print queue check timed out."
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=msg,
+        parse_mode="Markdown",
+    )
+
+
+async def cancel_command(update, context):
+    """Cancel all pending print jobs."""
+    cancel_bin = shutil.which("cancel")
+    if not cancel_bin:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ CUPS client tools (`cancel`) not found on this system.",
+        )
+        return
+
+    try:
+        result = subprocess.run(
+            [cancel_bin, "-a"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            msg = "🗑️ All print jobs cancelled"
+        else:
+            stderr = result.stderr.strip()[:MAX_STDERR_LENGTH]
+            msg = f"⚠️ Could not cancel jobs: {stderr}"
+    except subprocess.TimeoutExpired:
+        msg = "⚠️ Cancel command timed out."
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=msg,
+    )
+
+
+COPY_OPTIONS = {"2x": 2, "3x": 3, "4x": 4}
+
+
+async def set_print_options(update, context):
+    """Parse print option keywords from a text message."""
+    chat_id = update.effective_chat.id
+    text = update.effective_message.text.strip().lower()
+
+    color = True
+    copies = 1
+    valid = True
+
+    tokens = text.split()
+    for token in tokens:
+        if token in ("bw", "gray"):
+            color = False
+        elif token in COPY_OPTIONS:
+            copies = COPY_OPTIONS[token]
+        else:
+            valid = False
+
+    if not valid or not tokens:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `bw 2x`",
+            parse_mode="Markdown",
+        )
+        return
+
+    print_options[chat_id] = {"color": color, "copies": copies}
+
+    parts = []
+    parts.append("B&W" if not color else "Color")
+    parts.append(f"{copies} copies" if copies > 1 else "1 copy")
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"⚙️ Next print: {', '.join(parts)}",
+    )
+
+
 async def print_msg(update, context):
     logger.info("Received message from %s", update.effective_user.username)
 
@@ -136,32 +256,84 @@ async def print_msg(update, context):
     await file.download_to_drive(file_path)
     logger.info("File saved at %s", file_path)
 
+    chat_id = update.effective_chat.id
+    opts = print_options.pop(chat_id, {"color": True, "copies": 1})
+    color = opts["color"]
+    copies = opts["copies"]
+
     try:
-        print_file(file_path)
+        print_file(file_path, color=color, copies=copies)
         await context.bot.send_message(
-            chat_id=update.effective_chat.id, text="✅ Sent to printer!"
+            chat_id=chat_id, text="✅ Sent to printer!"
+        )
+        try:
+            os.remove(file_path)
+            logger.info("Cleaned up %s", file_path)
+        except OSError as e:
+            logger.warning("Could not remove %s: %s", file_path, e)
+        notify_homeassistant(
+            file_name=os.path.basename(file_path),
+            chat_id=chat_id,
+            copies=copies,
+            color=color,
         )
     except Exception as e:
         logger.error("Print failed: %s", e)
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="❌ Print failed. Please check the printer and try again.",
+            chat_id=chat_id,
+            text=f"❌ Print failed: {e}",
         )
 
 
-def print_file(file_path):
+def print_file(file_path, color=True, copies=1):
     """Send a file to the printer using lp."""
     lp = shutil.which("lp")
     if not lp:
         raise RuntimeError("lp command not found — is cups-client installed?")
-    cmd = [lp, "-o", "fit-to-page", "-o", "media=A4", file_path]
+    cmd = [lp, "-o", "fit-to-page", "-o", "media=A4"]
+    if not color:
+        cmd += ["-o", "ColorModel=Gray"]
+    if copies > 1:
+        cmd += ["-n", str(copies)]
+    cmd.append(file_path)
     logger.info("Printing %s", file_path)
     logger.debug("Command: %s", cmd)
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
+        stderr = result.stderr.strip()[:MAX_STDERR_LENGTH]
         logger.error("lp stderr: %s", result.stderr)
-        raise RuntimeError("Print command failed")
+        raise RuntimeError(stderr or "Print command failed")
     logger.info("lp stdout: %s", result.stdout)
+
+
+def notify_homeassistant(file_name, chat_id, copies, color):
+    """Fire a Home Assistant event after a successful print (best-effort)."""
+    ha_url = os.getenv("HA_URL")
+    ha_token = os.getenv("HA_TOKEN")
+    if not ha_url or not ha_token:
+        return
+
+    url = f"{ha_url}/api/events/printbot_job_sent"
+    payload = json.dumps({
+        "file_name": file_name,
+        "chat_id": chat_id,
+        "copies": copies,
+        "color": color,
+    }).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {ha_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=3).close()
+        logger.info("Home Assistant notified: %s", url)
+    except Exception as e:
+        logger.warning("Home Assistant notification failed: %s", e)
 
 
 async def post_init(application):
@@ -170,6 +342,8 @@ async def post_init(application):
         BotCommand("start", "Show the welcome message"),
         BotCommand("help", "Show available commands"),
         BotCommand("status", "Check printer availability"),
+        BotCommand("jobs", "Show the print queue"),
+        BotCommand("cancel", "Cancel all print jobs"),
         BotCommand("clean", "Delete cached files (allowed users only)"),
     ])
 
@@ -203,6 +377,12 @@ def main():
         chat_id_filter = filters.ALL
 
     application.add_handler(
+        CommandHandler("jobs", jobs_command, filters=chat_id_filter)
+    )
+    application.add_handler(
+        CommandHandler("cancel", cancel_command, filters=chat_id_filter)
+    )
+    application.add_handler(
         CommandHandler("clean", clean, filters=chat_id_filter)
     )
 
@@ -215,7 +395,16 @@ def main():
         )
     )
 
-    logger.info("PrintBot starting with allowed chat IDs: %s", allowed_chat_ids or "ALL")
+    application.add_handler(
+        MessageHandler(
+            chat_id_filter
+            & filters.TEXT
+            & (~filters.COMMAND),
+            set_print_options,
+        )
+    )
+
+    logger.info("PrintBot v%s starting with allowed chat IDs: %s", VERSION, allowed_chat_ids or "ALL")
     application.run_polling()
 
 

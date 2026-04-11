@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.vscode/
+data/
+Pipfile
+Pipfile.lock
+CHANGELOG.md
+README.md
+printbot.service
+__pycache__/
+*.pyc
+*.pyo
