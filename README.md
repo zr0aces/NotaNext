@@ -1,7 +1,10 @@
 # PrintBot
 
 [![Release](https://img.shields.io/github/v/release/zr0aces/PrintBot)](https://github.com/zr0aces/PrintBot/releases)
+[![Docker Release](https://github.com/zr0aces/PrintBot/actions/workflows/docker-release.yml/badge.svg)](https://github.com/zr0aces/PrintBot/actions/workflows/docker-release.yml)
 [![Docker](https://img.shields.io/badge/ghcr.io-zr0aces%2Fprintbot-blue)](https://github.com/zr0aces/PrintBot/pkgs/container/printbot)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.7-blue)](https://python-telegram-bot.org/)
 
 ## Overview
 
@@ -16,7 +19,7 @@ PrintBot is a Telegram bot that sends photos and documents straight to a CUPS-co
 - 🟢 `/status` command to check live printer availability
 - 📭 `/jobs` and `/cancel` commands for queue management
 - 🏠 Optional Home Assistant webhook after each print
-- 🐳 Docker and systemd deployment options
+- 🐳 Docker (multi-arch: amd64 & arm64) and systemd deployment options
 - ✅ No shell injection — all commands use argument lists
 
 ---
@@ -132,7 +135,7 @@ Options apply to the **next** file only, then reset to defaults (colour, 1 copy)
 
 ## Releases
 
-Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PrintBot/pkgs/container/printbot) when a version tag is pushed.
+Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PrintBot/pkgs/container/printbot) when a version tag is pushed. Multi-arch images are built for **linux/amd64** and **linux/arm64** (Raspberry Pi).
 
 Pull the latest release:
 
@@ -146,7 +149,24 @@ Or pin to a specific version:
 docker pull ghcr.io/zr0aces/printbot:1.0.0
 ```
 
+Or use a major.minor tag to track patch updates:
+
+```bash
+docker pull ghcr.io/zr0aces/printbot:1.0
+```
+
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+---
+
+## Tech Stack
+
+| Component | Version |
+|-----------|---------|
+| Python | 3.12 |
+| [python-telegram-bot](https://python-telegram-bot.org/) | 22.7 |
+| CUPS client (`lp` / `lpstat`) | System package |
+| Docker base image | `python:3.12-slim` |
 
 ---
 
