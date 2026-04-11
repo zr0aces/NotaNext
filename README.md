@@ -1,147 +1,124 @@
-# PrinterMasterBot
+# PrintBot
 
-PrinterMasterBot is a Telegram bot that allows users to send documents or photos directly to a connected printer. It integrates with the CUPS (Common Unix Printing System) to manage print jobs and supports deployment as a system service or Docker container.
+## Overview
 
----
+PrintBot is a Telegram bot that sends photos and documents straight to a CUPS-connected printer. Run it on a Raspberry Pi (or any Linux box) as a systemd service or Docker container, then print anything from your phone by just sending it to the bot.
 
-## Features
+**Key features**
 
-- Accepts files or photos via Telegram and sends them to a connected printer.
-- Configurable via environment variables for access control and bot token.
-- Supports USB-connected printers with CUPS integration.
-- Flexible deployment: run as a system service or as a Docker container.
-
----
-
-## Installation Options
-
-### Option 1: Run as a System Service
-
-#### Prerequisites
-
-1. **Install Required Software**:
-   ```bash
-   sudo apt-get install hplip cups
-   ```
-2. **Configure Your Printer**:
-   - Open the CUPS web interface (`http://localhost:631`).
-   - Add your printer and enable sharing for network printing.
-3. **Install Python and Pipenv**:
-   ```bash
-   sudo apt-get install python3 pipenv
-   ```
-
-#### Steps
-
-1. Clone the repository and navigate to the project directory:
-   ```bash
-   git clone https://github.com/your-repo/printermasterbot.git
-   cd printermasterbot
-   ```
-
-2. Install Python dependencies:
-   ```bash
-   pipenv install
-   ```
-
-3. Configure the environment variables:
-   - Edit the service file `printermasterbot.service` and add your `TOKEN` and `ALLOWED_USERNAMES` environment variables.
-
-4. Install and enable the service:
-   ```bash
-   sudo cp printermasterbot.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable printermasterbot.service
-   sudo systemctl start printermasterbot.service
-   ```
+- 📄 Print photos and documents sent via Telegram
+- 🔒 Access control via numeric chat IDs (`ALLOWED_CHAT_IDS`)
+- 🖨️ CUPS integration — uses the `lp` command under the hood
+- 🟢 `/status` command to check live printer availability
+- 🐳 Docker and systemd deployment options
+- ✅ No shell injection — all commands use argument lists
 
 ---
 
-### Option 2: Run as a Docker Container
+## How to Use
 
-#### Prerequisites
+### 1. Prerequisites
 
-- **Install Docker**:
-  ```bash
-  sudo apt-get install docker docker-compose
-  ```
+- A printer configured in CUPS (`http://localhost:631`)
+- A Telegram Bot token from [@BotFather](https://t.me/BotFather)
+- Your Telegram chat ID — send a message to [@userinfobot](https://t.me/userinfobot) to find it
 
-- Ensure your printer is configured with CUPS.
+For **systemd** deployment, you also need:
 
-#### Build and Run with Docker
+```bash
+sudo apt-get install hplip cups python3 python3-pip
+```
 
-1. **Build the Docker Image**:
-   ```bash
-   docker build -t printermasterbot .
-   ```
+For **Docker** deployment:
 
-2. **Run the Docker Container**:
-   ```bash
-   docker run -it --name printermasterbot \
-     --device=/dev/usb/lp0 \
-     -v /var/run/cups/cups.sock:/var/run/cups/cups.sock \
-     -e TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ \
-     -e ALLOWED_USERNAMES=user1,user2,user3 \
-     printermasterbot
-   ```
-
-#### Using Docker Compose
-
-1. Create a `docker-compose.yml` file:
-   ```yaml
-   version: "3.8"
-   services:
-     printermasterbot:
-       image: printermasterbot
-       container_name: printermasterbot
-       restart: always
-       devices:
-         - /dev/usb/lp0:/dev/usb/lp0
-       volumes:
-         - /var/run/cups/cups.sock:/var/run/cups/cups.sock
-       environment:
-         - TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ
-         - ALLOWED_USERNAMES=user1,user2,user3
-   ```
-
-2. Start the container:
-   ```bash
-   docker-compose up -d
-   ```
+```bash
+sudo apt-get install docker.io docker-compose-plugin
+```
 
 ---
 
-## Usage
+### 2. Configuration
 
-1. Find the bot on Telegram by searching for `@your_bot_username`.
-2. Start the bot with the `/start` command.
-3. Send a document or photo to the bot, and it will send it to the printer.
-4. Use the `/clean` command (restricted to allowed users) to clear old files.
+Copy the example env file and fill in your values:
 
----
+```bash
+cp .env.example .env
+```
 
-## Environment Variables
-
-- **`TOKEN`**: (Required) Your Telegram Bot API token.
-  - Example: `123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ`
-
-- **`ALLOWED_USERNAMES`**: (Optional) A comma-separated list of Telegram usernames allowed to use the bot. If unset, all users can interact with the bot.
-  - Example: `user1,user2,user3`
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TOKEN` | ✅ Yes | Telegram Bot API token from [@BotFather](https://t.me/BotFather) |
+| `ALLOWED_CHAT_IDS` | ❌ No | Comma-separated numeric chat IDs permitted to print/clean. **If unset, anyone can print.** Find your ID via [@userinfobot](https://t.me/userinfobot). |
 
 ---
 
-## Notes
+### 3. Run
 
-- Ensure your printer is powered on and connected before starting the bot.
-- For Docker deployments, make sure to forward USB devices and CUPS sockets to the container.
-- The bot uses the `lp` command to send files to the printer with options like `fit-to-page` and `A4` media.
+#### Option A — Docker Compose (recommended)
+
+```bash
+git clone https://github.com/zr0aces/printbot.git
+cd printbot
+cp .env.example .env   # fill in TOKEN and ALLOWED_CHAT_IDS
+docker compose up -d --build
+docker compose logs -f
+```
+
+#### Option B — systemd Service (Raspberry Pi / Linux)
+
+```bash
+git clone https://github.com/zr0aces/printbot.git /home/pi/printbot
+cd /home/pi/printbot
+pip install -r requirements.txt
+cp .env.example .env   # fill in TOKEN and ALLOWED_CHAT_IDS
+
+sudo cp printbot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now printbot.service
+sudo systemctl status printbot.service
+```
+
+#### Option C — Run directly
+
+```bash
+git clone https://github.com/zr0aces/printbot.git
+cd printbot
+pip install -r requirements.txt
+cp .env.example .env   # fill in TOKEN and ALLOWED_CHAT_IDS
+python bot.py
+```
+
+---
+
+### 4. Send a File to Print
+
+Once the bot is running, open it in Telegram and:
+
+1. Send any **photo** or **document** — the bot forwards it to the printer automatically.
+2. Use the commands below for status and maintenance.
+
+#### Bot Commands
+
+| Command | Description | Who can use |
+|---------|-------------|-------------|
+| `/start` | Show the welcome message | Everyone |
+| `/help` | List available commands | Everyone |
+| `/status` | Check printer availability via CUPS | Everyone |
+| `/clean` | Delete cached downloaded files | Allowed chat IDs only |
 
 ---
 
 ## Troubleshooting
 
-- **Printer not detected**: Check CUPS configuration and ensure the printer is added and shared.
-- **Bot not responding**: Verify your Telegram Bot API token and network connection.
-- **Permission issues**: Ensure the user running the bot has access to the printer and CUPS.
+| Problem | Solution |
+|---------|----------|
+| Printer not detected | Check CUPS at `http://localhost:631`; ensure the printer is added and enabled |
+| Bot not responding | Verify `TOKEN` in `.env` is correct and the bot process is running |
+| `/status` shows no printers | Run `lpstat -p` on the host to confirm CUPS sees your printer |
+| Permission issues | Ensure the running user is in the `lpadmin` group |
+| Docker can't reach printer | Confirm `/dev/usb/lp0` and `/var/run/cups/cups.sock` are forwarded in `docker-compose.yml` |
 
-Contributions and issues are welcome to improve PrinterMasterBot!
+---
+
+Contributions and issues are welcome!
+

@@ -1,0 +1,14 @@
+[Unit]
+Description=PrintBot - Telegram bot for printing
+After=cups.service
+
+[Service]
+EnvironmentFile=/home/pi/printbot/.env
+User=pi
+WorkingDirectory=/home/pi/printbot
+ExecStart=/usr/bin/python3 bot.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
