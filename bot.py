@@ -76,7 +76,7 @@ async def print_msg(update, context):
         logger.error("Print failed: %s", e)
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"Print failed: {e}",
+            text="Print failed. Please check the printer and try again.",
         )
 
 
@@ -88,7 +88,7 @@ def print_file(file_path):
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         logger.error("lp stderr: %s", result.stderr)
-        raise RuntimeError(f"lp exited with code {result.returncode}: {result.stderr}")
+        raise RuntimeError("Print command failed")
     logger.info("lp stdout: %s", result.stdout)
 
 
