@@ -26,11 +26,23 @@ HELP_TEXT = (
 )
 
 
-def get_allowed_usernames():
-    """Parse allowed usernames from environment variable (comma or space separated)."""
-    raw = os.getenv("ALLOWED_USERNAMES", "")
-    # Support both comma-separated and space-separated formats
-    return [u.strip() for u in raw.replace(",", " ").split() if u.strip()]
+def get_allowed_chat_ids():
+    """Parse allowed chat IDs from environment variable (comma or space separated).
+
+    Returns a list of integer chat IDs. Chat IDs are permanent numeric identifiers
+    assigned by Telegram and cannot be changed or spoofed, making them more reliable
+    than usernames for access control.
+    """
+    raw = os.getenv("ALLOWED_CHAT_IDS", "")
+    ids = []
+    for part in raw.replace(",", " ").split():
+        part = part.strip()
+        if part:
+            try:
+                ids.append(int(part))
+            except ValueError:
+                logger.warning("Ignoring non-integer value in ALLOWED_CHAT_IDS: %r", part)
+    return ids
 
 
 async def start(update, context):
@@ -168,7 +180,7 @@ def main():
         logger.error("TOKEN environment variable is not set")
         raise SystemExit("TOKEN environment variable is required")
 
-    allowed_usernames = get_allowed_usernames()
+    allowed_chat_ids = get_allowed_chat_ids()
 
     application = (
         ApplicationBuilder()
@@ -181,29 +193,29 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status))
 
-    if allowed_usernames:
-        username_filter = filters.Chat(username=allowed_usernames)
+    if allowed_chat_ids:
+        chat_id_filter = filters.Chat(chat_id=allowed_chat_ids)
     else:
         logger.warning(
-            "ALLOWED_USERNAMES is not set — all Telegram users can print. "
+            "ALLOWED_CHAT_IDS is not set — all Telegram users can print. "
             "Set this variable to restrict access."
         )
-        username_filter = filters.ALL
+        chat_id_filter = filters.ALL
 
     application.add_handler(
-        CommandHandler("clean", clean, filters=username_filter)
+        CommandHandler("clean", clean, filters=chat_id_filter)
     )
 
     application.add_handler(
         MessageHandler(
-            username_filter
+            chat_id_filter
             & (filters.PHOTO | filters.Document.ALL)
             & (~filters.COMMAND),
             print_msg,
         )
     )
 
-    logger.info("PrintBot starting with allowed users: %s", allowed_usernames or "ALL")
+    logger.info("PrintBot starting with allowed chat IDs: %s", allowed_chat_ids or "ALL")
     application.run_polling()
 
 

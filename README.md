@@ -7,7 +7,7 @@ PrintBot is a Telegram bot that lets you send documents and photos directly to a
 ## Features
 
 - 📄 Print photos and documents sent via Telegram
-- 🔒 Access control via configurable allowed usernames
+- 🔒 Access control via configurable allowed chat IDs
 - 🖨️ CUPS integration — uses the `lp` command under the hood
 - 🟢 `/status` command to check live printer availability
 - 📋 Command menu registered directly in Telegram
@@ -29,7 +29,7 @@ PrintBot is a Telegram bot that lets you send documents and photos directly to a
 ```bash
 git clone https://github.com/zr0aces/printbot.git
 cd printbot
-cp .env.example .env   # fill in your TOKEN and ALLOWED_USERNAMES
+cp .env.example .env   # fill in your TOKEN and ALLOWED_CHAT_IDS
 pip install -r requirements.txt
 python bot.py
 ```
@@ -53,7 +53,7 @@ python bot.py
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `TOKEN` | ✅ Yes | Telegram Bot API token from [@BotFather](https://t.me/BotFather) |
-| `ALLOWED_USERNAMES` | ❌ No | Comma-separated Telegram usernames permitted to print/clean. **If unset, all Telegram users can send files to your printer** — set this in production. |
+| `ALLOWED_CHAT_IDS` | ❌ No | Comma-separated numeric Telegram chat IDs permitted to print/clean. Chat IDs are permanent and cannot be changed or spoofed — unlike usernames. **If unset, all Telegram users can send files to your printer** — set this in production. Find your ID via [@userinfobot](https://t.me/userinfobot). |
 
 Copy `.env.example` to `.env` and fill in your values:
 
@@ -91,7 +91,7 @@ Configure your printer via the CUPS web interface at `http://localhost:631`.
 3. Configure environment variables:
    ```bash
    cp .env.example .env
-   # Edit .env with your TOKEN and ALLOWED_USERNAMES
+   # Edit .env with your TOKEN and ALLOWED_CHAT_IDS
    ```
 
 4. Install and enable the service:
@@ -126,7 +126,7 @@ Ensure your printer is configured with CUPS on the host.
    git clone https://github.com/zr0aces/printbot.git
    cd printbot
    cp .env.example .env
-   # Edit .env with your TOKEN and ALLOWED_USERNAMES
+   # Edit .env with your TOKEN and ALLOWED_CHAT_IDS
    ```
 
 2. Build and start:
