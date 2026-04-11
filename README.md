@@ -10,6 +10,15 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 - Configurable via environment variables for access control and bot token.
 - Supports USB-connected printers with CUPS integration.
 - Flexible deployment: run as a system service or as a Docker container.
+- Secure: no shell injection, safe file handling, and proper error reporting.
+
+---
+
+## Requirements
+
+- Python 3.12+
+- CUPS printing system with a configured printer
+- A Telegram Bot API token (create one via [@BotFather](https://t.me/BotFather))
 
 ---
 
@@ -21,15 +30,11 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 
 1. **Install Required Software**:
    ```bash
-   sudo apt-get install hplip cups
+   sudo apt-get install hplip cups python3 python3-pip
    ```
 2. **Configure Your Printer**:
    - Open the CUPS web interface (`http://localhost:631`).
    - Add your printer and enable sharing for network printing.
-3. **Install Python and Pipenv**:
-   ```bash
-   sudo apt-get install python3 pipenv
-   ```
 
 #### Steps
 
@@ -41,11 +46,12 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 
 2. Install Python dependencies:
    ```bash
-   pipenv install
+   pip install -r requirements.txt
    ```
 
-3. Configure the environment variables:
-   - Edit the service file `printermasterbot.service` and add your `TOKEN` and `ALLOWED_USERNAMES` environment variables.
+3. Configure environment variables:
+   - Copy `.env.example` to `.env` and fill in your `TOKEN` and `ALLOWED_USERNAMES`.
+   - Or edit the service file `printermasterbot.service` with your values.
 
 4. Install and enable the service:
    ```bash
@@ -63,12 +69,24 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 
 - **Install Docker**:
   ```bash
-  sudo apt-get install docker docker-compose
+  sudo apt-get install docker.io docker-compose-plugin
   ```
 
-- Ensure your printer is configured with CUPS.
+- Ensure your printer is configured with CUPS on the host.
 
-#### Build and Run with Docker
+#### Using Docker Compose (Recommended)
+
+1. Copy `.env.example` to `.env` and fill in your values:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Build and start the container:
+   ```bash
+   docker compose up -d --build
+   ```
+
+#### Manual Docker Build and Run
 
 1. **Build the Docker Image**:
    ```bash
@@ -77,36 +95,13 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 
 2. **Run the Docker Container**:
    ```bash
-   docker run -it --name printermasterbot \
+   docker run -d --name printermasterbot \
      --device=/dev/usb/lp0 \
      -v /var/run/cups/cups.sock:/var/run/cups/cups.sock \
-     -e TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ \
+     -e TOKEN=your-telegram-bot-token \
      -e ALLOWED_USERNAMES=user1,user2,user3 \
+     --restart always \
      printermasterbot
-   ```
-
-#### Using Docker Compose
-
-1. Create a `docker-compose.yml` file:
-   ```yaml
-   version: "3.8"
-   services:
-     printermasterbot:
-       image: printermasterbot
-       container_name: printermasterbot
-       restart: always
-       devices:
-         - /dev/usb/lp0:/dev/usb/lp0
-       volumes:
-         - /var/run/cups/cups.sock:/var/run/cups/cups.sock
-       environment:
-         - TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ
-         - ALLOWED_USERNAMES=user1,user2,user3
-   ```
-
-2. Start the container:
-   ```bash
-   docker-compose up -d
    ```
 
 ---
@@ -135,6 +130,7 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 - Ensure your printer is powered on and connected before starting the bot.
 - For Docker deployments, make sure to forward USB devices and CUPS sockets to the container.
 - The bot uses the `lp` command to send files to the printer with options like `fit-to-page` and `A4` media.
+- The Docker image includes `cups-client` for the `lp` command.
 
 ---
 
@@ -143,5 +139,6 @@ PrinterMasterBot is a Telegram bot that allows users to send documents or photos
 - **Printer not detected**: Check CUPS configuration and ensure the printer is added and shared.
 - **Bot not responding**: Verify your Telegram Bot API token and network connection.
 - **Permission issues**: Ensure the user running the bot has access to the printer and CUPS.
+- **Print failures**: Check the bot logs for `lp` command errors. Ensure CUPS is running and the printer is available.
 
 Contributions and issues are welcome to improve PrinterMasterBot!

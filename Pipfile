@@ -4,13 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-python-telegram-bot = "*"
+python-telegram-bot = "==22.7"
 
 [dev-packages]
 black = "*"
 
 [requires]
-python_version = "3.8"
+python_version = "3.12"
 
 [pipenv]
 allow_prereleases = true
