@@ -330,7 +330,7 @@ def notify_homeassistant(file_name, chat_id, copies, color):
         method="POST",
     )
     try:
-        urllib.request.urlopen(req, timeout=3)
+        urllib.request.urlopen(req, timeout=3).close()
         logger.info("Home Assistant notified: %s", url)
     except Exception as e:
         logger.warning("Home Assistant notification failed: %s", e)
