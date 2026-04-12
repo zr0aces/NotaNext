@@ -1,1213 +1,812 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Print Server — Setup Guide v3</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,600;0,700;1,300&family=Barlow+Condensed:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-    :root {
-      --bg: #0e0f11;
-      --bg2: #141618;
-      --bg3: #1a1d21;
-      --bg4: #20242a;
-      --border: #2a2e36;
-      --border2: #343840;
-      --orange: #f97316;
-      --orange2: #fb923c;
-      --orange3: #fdba74;
-      --orangedim: #7c3a0e;
-      --orangebg: rgba(249, 115, 22, 0.08);
-      --orangebg2: rgba(249, 115, 22, 0.14);
-      --text: #e8eaf0;
-      --text2: #9aa0b0;
-      --text3: #5a6070;
-      --green: #4ade80;
-      --greenbg: rgba(74, 222, 128, 0.08);
-      --red: #f87171;
-      --redbg: rgba(248, 113, 113, 0.08);
-      --blue: #60a5fa;
-      --bluebg: rgba(96, 165, 250, 0.08);
-      --yellow: #fbbf24;
-      --mono: 'JetBrains Mono', monospace;
-      --cond: 'Barlow Condensed', sans-serif;
-      --body: 'Barlow', sans-serif;
-    }
-
-    *,
-    *::before,
-    *::after {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--body);
-      font-size: 17px;
-      line-height: 1.65;
-      min-height: 100vh;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* scanline texture */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(0deg,
-          transparent,
-          transparent 2px,
-          rgba(0, 0, 0, 0.06) 2px,
-          rgba(0, 0, 0, 0.06) 4px);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .wrap {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 48px 28px 100px;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* ── HERO ─────────────────────────────────── */
-    .hero {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 24px;
-      align-items: start;
-      margin-bottom: 48px;
-      padding-bottom: 32px;
-      border-bottom: 1px solid var(--border);
-      animation: fadeUp .6s ease both;
-    }
-
-    .hero-eyebrow {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .version-chip {
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      background: var(--orangebg2);
-      border: 1px solid var(--orange);
-      color: var(--orange);
-      padding: 3px 10px;
-      border-radius: 4px;
-    }
-
-    .live-dot {
-      width: 7px;
-      height: 7px;
-      background: var(--green);
-      border-radius: 50%;
-      box-shadow: 0 0 6px var(--green);
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-
-      0%,
-      100% {
-        opacity: 1;
-      }
-
-      50% {
-        opacity: .4;
-      }
-    }
-
-    .hero h1 {
-      font-family: var(--cond);
-      font-size: clamp(38px, 6vw, 64px);
-      font-weight: 800;
-      line-height: .95;
-      letter-spacing: -.01em;
-      text-transform: uppercase;
-      margin-bottom: 16px;
-    }
-
-    .hero h1 .hl {
-      color: var(--orange);
-    }
-
-    .hero-desc {
-      font-size: 16px;
-      color: var(--text2);
-      line-height: 1.65;
-      max-width: 480px;
-    }
-
-    .hero-meta {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: flex-end;
-      padding-top: 6px;
-    }
-
-    .meta-item {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text3);
-      text-align: right;
-      letter-spacing: .04em;
-    }
-
-    .meta-item span {
-      color: var(--text2);
-    }
-
-    /* ── WHAT'S NEW BANNER ───────────────────── */
-    .new-banner {
-      background: linear-gradient(135deg, var(--orangebg2) 0%, rgba(249, 115, 22, 0.04) 100%);
-      border: 1px solid var(--orange);
-      border-radius: 8px;
-      padding: 18px 22px;
-      margin-bottom: 36px;
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
-      animation: fadeUp .5s .05s ease both;
-    }
-
-    .new-banner-icon {
-      font-size: 22px;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-
-    .new-banner-head {
-      font-family: var(--cond);
-      font-size: 15px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: var(--orange);
-      margin-bottom: 8px;
-    }
-
-    .new-banner-body {
-      font-size: 15px;
-      color: var(--text2);
-      line-height: 1.6;
-    }
-
-    .new-banner-body a {
-      color: var(--orange2);
-      text-decoration: none;
-    }
-
-    .new-banner-body a:hover {
-      text-decoration: underline;
-    }
-
-    .chip-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .chip {
-      font-family: var(--mono);
-      font-size: 12px;
-      padding: 2px 9px;
-      border-radius: 3px;
-      border: 1px solid var(--border2);
-      color: var(--text2);
-      background: var(--bg3);
-      letter-spacing: .03em;
-    }
-
-    .chip.new {
-      border-color: var(--orange);
-      color: var(--orange);
-      background: var(--orangebg);
-    }
-
-    /* ── CHANGELOG ──────────────────────────── */
-    .section {
-      margin-bottom: 48px;
-      animation: fadeUp .5s ease both;
-    }
-
-    .section:nth-child(3) {
-      animation-delay: .08s
-    }
-
-    .section:nth-child(4) {
-      animation-delay: .12s
-    }
-
-    .section:nth-child(5) {
-      animation-delay: .16s
-    }
-
-    .section:nth-child(6) {
-      animation-delay: .20s
-    }
-
-    .section:nth-child(7) {
-      animation-delay: .24s
-    }
-
-    .section:nth-child(8) {
-      animation-delay: .28s
-    }
-
-    .section:nth-child(9) {
-      animation-delay: .32s
-    }
-
-    .section:nth-child(10) {
-      animation-delay: .36s
-    }
-
-    .section-label {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .section-num {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--orange);
-      background: var(--orangebg);
-      border: 1px solid var(--orangedim);
-      padding: 3px 8px;
-      border-radius: 4px;
-      flex-shrink: 0;
-    }
-
-    .section-title {
-      font-family: var(--cond);
-      font-size: 23px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: var(--text);
-    }
-
-    .section-sub {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text3);
-      margin-left: auto;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      flex-shrink: 0;
-    }
-
-    .divider {
-      height: 1px;
-      background: linear-gradient(90deg, var(--orange) 0%, var(--border) 40%, transparent 100%);
-      margin-bottom: 20px;
-    }
-
-    /* changelog rows */
-    .cl {
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
-
-    .cl-row {
-      display: flex;
-      gap: 12px;
-      align-items: baseline;
-      padding: 10px 16px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      font-size: 15px;
-      color: var(--text2);
-      transition: background .15s;
-    }
-
-    .cl-row:last-child {
-      border-bottom: none;
-    }
-
-    .cl-row:hover {
-      background: var(--bg3);
-    }
-
-    .cl-tag {
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 7px;
-      border-radius: 3px;
-      flex-shrink: 0;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .cl-tag.add {
-      background: var(--greenbg);
-      color: var(--green);
-      border: 1px solid rgba(74, 222, 128, .2);
-    }
-
-    .cl-tag.chg {
-      background: var(--orangebg);
-      color: var(--orange2);
-      border: 1px solid rgba(249, 115, 22, .2);
-    }
-
-    .cl-tag.del {
-      background: var(--redbg);
-      color: var(--red);
-      border: 1px solid rgba(248, 113, 113, .2);
-    }
-
-    /* compact changelog overrides */
-    .cl.compact .cl-row {
-      padding: 5px 14px;
-      font-size: 14px;
-    }
-
-    /* ── COLLAPSIBLE SECTION (FOR CHANGELOG) ── */
-    .cl-wrap {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      overflow: hidden;
-      transition: border-color .2s;
-    }
-
-    .cl-wrap:hover {
-      border-color: var(--border2);
-    }
-
-    .cl-wrap.open {
-      border-color: var(--orangedim);
-    }
-
-    .cl-head {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-      padding: 14px 18px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .cl-body {
-      display: none;
-      padding: 0 18px 18px 50px;
-      border-top: 1px solid var(--border);
-    }
-
-    .cl-wrap.open .cl-body {
-      display: block;
-      padding-top: 16px;
-    }
-
-    .cl-wrap.open .step-arr {
-      transform: rotate(90deg);
-      color: var(--orange);
-    }
-
-    /* ── ARCH ───────────────────────────────── */
-    .arch {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 22px 24px;
-      margin-bottom: 36px;
-      font-family: var(--mono);
-      animation: fadeUp .5s .04s ease both;
-    }
-
-    .arch-label {
-      font-size: 11px;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-      color: var(--text3);
-      margin-bottom: 20px;
-    }
-
-    .arch-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .arch-row {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .anode {
-      font-size: 13.5px;
-      font-weight: 600;
-      padding: 6px 12px;
-      border-radius: 5px;
-      border: 1px solid;
-      white-space: nowrap;
-    }
-
-    .anode.or {
-      background: var(--orangebg);
-      border-color: var(--orangedim);
-      color: var(--orange2);
-    }
-
-    .anode.gr {
-      background: var(--greenbg);
-      border-color: rgba(74, 222, 128, .25);
-      color: var(--green);
-    }
-
-    .anode.bl {
-      background: var(--bluebg);
-      border-color: rgba(96, 165, 250, .25);
-      color: var(--blue);
-    }
-
-    .anode.dk {
-      background: var(--bg4);
-      border-color: var(--border2);
-      color: var(--text);
-    }
-
-    .anode.yl {
-      background: rgba(251, 191, 36, .08);
-      border-color: rgba(251, 191, 36, .25);
-      color: var(--yellow);
-    }
-
-    .arrow {
-      color: var(--text3);
-      font-size: 15px;
-    }
-
-    /* ── STEPS ──────────────────────────────── */
-    .steps {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .step {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      overflow: hidden;
-      transition: border-color .2s, box-shadow .2s;
-    }
-
-    .step:hover {
-      border-color: var(--border2);
-    }
-
-    .step.open {
-      border-color: var(--orangedim);
-      box-shadow: 0 0 0 1px var(--orangedim);
-    }
-
-    .step-head {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-      padding: 14px 18px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .step-n {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text3);
-      margin-top: 3px;
-      flex-shrink: 0;
-      min-width: 32px;
-    }
-
-    .step-t {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text);
-      flex: 1;
-      line-height: 1.4;
-    }
-
-    .step-new {
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      background: var(--orangebg);
-      color: var(--orange);
-      border: 1px solid var(--orangedim);
-      padding: 2px 7px;
-      border-radius: 3px;
-      flex-shrink: 0;
-      margin-top: 2px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-    }
-
-    .step-arr {
-      font-size: 18px;
-      color: var(--text3);
-      transition: transform .2s, color .2s;
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .step.open .step-arr {
-      transform: rotate(90deg);
-      color: var(--orange);
-    }
-
-    .step-body {
-      display: none;
-      padding: 0 18px 18px 60px;
-      border-top: 1px solid var(--border);
-    }
-
-    .step.open .step-body {
-      display: block;
-      padding-top: 16px;
-    }
-
-    .step-body p {
-      font-size: 15.5px;
-      color: var(--text2);
-      line-height: 1.7;
-      margin-bottom: 12px;
-    }
-
-    .step-body ul {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-      margin-bottom: 12px;
-    }
-
-    .step-body ul li {
-      font-size: 15.5px;
-      color: var(--text);
-      display: flex;
-      gap: 10px;
-      line-height: 1.5;
-    }
-
-    .step-body ul li::before {
-      content: '▸';
-      color: var(--orange);
-      flex-shrink: 0;
-      font-size: 12px;
-      margin-top: 2px;
-    }
-
-    /* ── CODE ───────────────────────────────── */
-    .code-block {
-      background: #090a0c;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-      margin-top: 10px;
-      margin-bottom: 4px;
-    }
-
-    .code-top {
-      background: #111316;
-      border-bottom: 1px solid var(--border);
-      padding: 6px 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .code-dots {
-      display: flex;
-      gap: 5px;
-    }
-
-    .code-dots span {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-    }
-
-    .code-dots span:nth-child(1) {
-      background: #ff5f57;
-    }
-
-    .code-dots span:nth-child(2) {
-      background: #febc2e;
-    }
-
-    .code-dots span:nth-child(3) {
-      background: #28c840;
-    }
-
-    .code-file {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text3);
-      letter-spacing: .06em;
-    }
-
-    pre {
-      padding: 14px 16px;
-      font-family: var(--mono);
-      font-size: 13.5px;
-      color: #c8ccd8;
-      line-height: 1.85;
-      overflow-x: auto;
-      white-space: pre;
-    }
-
-    .cm {
-      color: #4a5568;
-      font-style: italic;
-    }
-
-    .kw {
-      color: #f97316;
-    }
-
-    .st {
-      color: #86efac;
-    }
-
-    .ky {
-      color: #93c5fd;
-    }
-
-    .vl {
-      color: #fcd34d;
-    }
-
-    /* ── CALLOUTS ───────────────────────────── */
-    .callout {
-      border-radius: 5px;
-      padding: 11px 14px;
-      font-size: 15px;
-      line-height: 1.55;
-      margin-top: 12px;
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-    }
-
-    .callout-icon {
-      flex-shrink: 0;
-      font-size: 16px;
-      margin-top: 1px;
-    }
-
-    .callout.tip {
-      background: var(--bluebg);
-      border-left: 2px solid var(--blue);
-      color: var(--text2);
-    }
-
-    .callout.warn {
-      background: var(--orangebg);
-      border-left: 2px solid var(--orange);
-      color: var(--text2);
-    }
-
-    .callout.ok {
-      background: var(--greenbg);
-      border-left: 2px solid var(--green);
-      color: var(--text2);
-    }
-
-    .callout strong {
-      color: var(--text);
-    }
-
-    /* ── OPTIONS TABLE ──────────────────────── */
-    .opts-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 15px;
-      margin-top: 10px;
-    }
-
-    .opts-table th {
-      text-align: left;
-      padding: 8px 12px;
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: var(--text3);
-      background: var(--bg3);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .opts-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      color: var(--text2);
-      vertical-align: middle;
-    }
-
-    .opts-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .opts-table tr:hover td {
-      background: var(--bg3);
-    }
-
-    .opts-table code {
-      font-family: var(--mono);
-      font-size: 13px;
-      background: var(--bg3);
-      color: var(--orange2);
-      padding: 1px 6px;
-      border-radius: 3px;
-    }
-
-    /* ── TROUBLE ────────────────────────────── */
-    .trouble-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    @media(max-width:580px) {
-      .trouble-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .ti {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      padding: 14px 16px;
-      transition: border-color .2s;
-    }
-
-    .ti:hover {
-      border-color: var(--border2);
-    }
-
-    .tq {
-      font-family: var(--mono);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--red);
-      margin-bottom: 7px;
-      line-height: 1.4;
-    }
-
-    .ta {
-      font-size: 14.5px;
-      color: var(--text2);
-      line-height: 1.6;
-    }
-
-    .ta code {
-      font-family: var(--mono);
-      font-size: 12.5px;
-      background: var(--bg3);
-      color: var(--orange2);
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-
-    /* ── SUMMARY TABLE ──────────────────────── */
-    .summary-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 15.5px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .summary-table th {
-      text-align: left;
-      padding: 10px 16px;
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: var(--text3);
-      background: var(--bg3);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .summary-table td {
-      padding: 11px 16px;
-      border-bottom: 1px solid var(--border);
-      color: var(--text2);
-      vertical-align: middle;
-    }
-
-    .summary-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .summary-table tr:hover td {
-      background: var(--bg3);
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 9px;
-      border-radius: 3px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .badge.done {
-      background: var(--greenbg);
-      color: var(--green);
-      border: 1px solid rgba(74, 222, 128, .2);
-    }
-
-    .badge.new {
-      background: var(--orangebg);
-      color: var(--orange);
-      border: 1px solid rgba(249, 115, 22, .2);
-    }
-
-    .badge.opt {
-      background: var(--bluebg);
-      color: var(--blue);
-      border: 1px solid rgba(96, 165, 250, .2);
-    }
-
-    /* ── FOOTER ─────────────────────────────── */
-    .footer {
-      margin-top: 60px;
-      padding-top: 20px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text3);
-    }
-
-    .footer a {
-      color: var(--orange2);
-      text-decoration: none;
-    }
-
-
-    /* ── COPY BUTTON ────────────────────────────── */
-    .copy-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .04em;
-      color: var(--text3);
-      background: transparent;
-      border: 1px solid var(--border2);
-      border-radius: 4px;
-      padding: 3px 10px;
-      cursor: pointer;
-      transition: all .18s;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .copy-btn:hover {
-      color: var(--orange);
-      border-color: var(--orange);
-      background: var(--orangebg);
-    }
-
-    .copy-btn.copied {
-      color: var(--green);
-      border-color: var(--green);
-      background: var(--greenbg);
-    }
-
-    .copy-btn svg {
-      width: 12px;
-      height: 12px;
-      flex-shrink: 0;
-    }
-
-    /* ── ANIM ───────────────────────────────── */
-    @keyframes fadeUp {
-      from {
-        opacity: 0;
-        transform: translateY(14px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Print Server — Setup Guide v3</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,600;0,700;1,300&family=Barlow+Condensed:wght@500;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg:       #0e0f11;
+  --bg2:      #141618;
+  --bg3:      #1a1d21;
+  --bg4:      #20242a;
+  --border:   #2a2e36;
+  --border2:  #343840;
+  --orange:   #f97316;
+  --orange2:  #fb923c;
+  --orange3:  #fdba74;
+  --orangedim:#7c3a0e;
+  --orangebg: rgba(249,115,22,0.08);
+  --orangebg2:rgba(249,115,22,0.14);
+  --text:     #e8eaf0;
+  --text2:    #9aa0b0;
+  --text3:    #5a6070;
+  --green:    #4ade80;
+  --greenbg:  rgba(74,222,128,0.08);
+  --red:      #f87171;
+  --redbg:    rgba(248,113,113,0.08);
+  --blue:     #60a5fa;
+  --bluebg:   rgba(96,165,250,0.08);
+  --yellow:   #fbbf24;
+  --mono:     'JetBrains Mono', monospace;
+  --cond:     'Barlow Condensed', sans-serif;
+  --body:     'Barlow', sans-serif;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.65;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scanline texture */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events:none; z-index:0;
+}
+
+.wrap { max-width: 900px; margin: 0 auto; padding: 48px 28px 100px; position:relative; z-index:1; }
+
+/* ── HERO ─────────────────────────────────── */
+.hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 48px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+  animation: fadeUp .6s ease both;
+}
+
+.hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.version-chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--orangebg2);
+  border: 1px solid var(--orange);
+  color: var(--orange);
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.live-dot {
+  width: 7px; height: 7px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity:1; }
+  50% { opacity:.4; }
+}
+
+.hero h1 {
+  font-family: var(--cond);
+  font-size: clamp(38px, 6vw, 64px);
+  font-weight: 800;
+  line-height: .95;
+  letter-spacing: -.01em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.hero h1 .hl { color: var(--orange); }
+
+.hero-desc {
+  font-size: 16px;
+  color: var(--text2);
+  line-height: 1.65;
+  max-width: 480px;
+}
+
+.hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  padding-top: 6px;
+}
+
+.meta-item {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text3);
+  text-align: right;
+  letter-spacing: .04em;
+}
+
+.meta-item span { color: var(--text2); }
+
+/* ── WHAT'S NEW BANNER ───────────────────── */
+.new-banner {
+  background: linear-gradient(135deg, var(--orangebg2) 0%, rgba(249,115,22,0.04) 100%);
+  border: 1px solid var(--orange);
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-bottom: 36px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  animation: fadeUp .5s .05s ease both;
+}
+
+.new-banner-icon { font-size: 22px; flex-shrink:0; margin-top:1px; }
+.new-banner-head {
+  font-family: var(--cond);
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--orange);
+  margin-bottom: 8px;
+}
+
+.new-banner-body { font-size: 15px; color: var(--text2); line-height: 1.6; }
+.new-banner-body a { color: var(--orange2); text-decoration: none; }
+.new-banner-body a:hover { text-decoration: underline; }
+
+.chip-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  background: var(--bg3);
+  letter-spacing: .03em;
+}
+.chip.new { border-color: var(--orange); color: var(--orange); background: var(--orangebg); }
+
+/* ── CHANGELOG ──────────────────────────── */
+.section { margin-bottom: 48px; animation: fadeUp .5s ease both; }
+.section:nth-child(3)  { animation-delay:.08s }
+.section:nth-child(4)  { animation-delay:.12s }
+.section:nth-child(5)  { animation-delay:.16s }
+.section:nth-child(6)  { animation-delay:.20s }
+.section:nth-child(7)  { animation-delay:.24s }
+.section:nth-child(8)  { animation-delay:.28s }
+.section:nth-child(9)  { animation-delay:.32s }
+.section:nth-child(10) { animation-delay:.36s }
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.section-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--orange);
+  background: var(--orangebg);
+  border: 1px solid var(--orangedim);
+  padding: 3px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.section-title {
+  font-family: var(--cond);
+  font-size: 23px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text);
+}
+
+.section-sub {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text3);
+  margin-left: auto;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--orange) 0%, var(--border) 40%, transparent 100%);
+  margin-bottom: 20px;
+}
+
+/* changelog rows */
+.cl { display:flex; flex-direction:column; gap:1px; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.cl-row {
+  display:flex; gap:12px; align-items:baseline;
+  padding:10px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  font-size:15px; color:var(--text2);
+  transition: background .15s;
+}
+.cl-row:last-child { border-bottom: none; }
+.cl-row:hover { background: var(--bg3); }
+.cl-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cl-tag.add { background: var(--greenbg); color: var(--green); border:1px solid rgba(74,222,128,.2); }
+.cl-tag.chg { background: var(--orangebg); color: var(--orange2); border:1px solid rgba(249,115,22,.2); }
+.cl-tag.del { background: var(--redbg); color: var(--red); border:1px solid rgba(248,113,113,.2); }
+
+/* ── ARCH ───────────────────────────────── */
+.arch {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 22px 24px;
+  margin-bottom: 36px;
+  font-family: var(--mono);
+  animation: fadeUp .5s .04s ease both;
+}
+.arch-label {
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 20px;
+}
+.arch-rows { display:flex; flex-direction:column; gap:10px; }
+.arch-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.anode {
+  font-size: 13.5px; font-weight: 600;
+  padding: 6px 12px; border-radius: 5px; border:1px solid;
+  white-space: nowrap;
+}
+.anode.or { background:var(--orangebg); border-color:var(--orangedim); color:var(--orange2); }
+.anode.gr { background:var(--greenbg); border-color:rgba(74,222,128,.25); color:var(--green); }
+.anode.bl { background:var(--bluebg); border-color:rgba(96,165,250,.25); color:var(--blue); }
+.anode.dk { background:var(--bg4); border-color:var(--border2); color:var(--text); }
+.anode.yl { background:rgba(251,191,36,.08); border-color:rgba(251,191,36,.25); color:var(--yellow); }
+.arrow { color:var(--text3); font-size:15px; }
+
+/* ── STEPS ──────────────────────────────── */
+.steps { display:flex; flex-direction:column; gap:6px; }
+
+.step {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  transition: border-color .2s, box-shadow .2s;
+}
+.step:hover { border-color: var(--border2); }
+.step.open { border-color: var(--orangedim); box-shadow: 0 0 0 1px var(--orangedim); }
+
+.step-head {
+  display:flex; align-items:flex-start; gap:14px;
+  padding: 14px 18px;
+  cursor: pointer; user-select: none;
+}
+
+.step-n {
+  font-family: var(--mono);
+  font-size: 12px; color: var(--text3);
+  margin-top: 3px; flex-shrink:0; min-width:32px;
+}
+
+.step-t {
+  font-size: 16px; font-weight: 600;
+  color: var(--text); flex:1; line-height:1.4;
+}
+
+.step-new {
+  font-family: var(--mono);
+  font-size: 11px; font-weight:600;
+  background: var(--orangebg); color: var(--orange);
+  border: 1px solid var(--orangedim);
+  padding: 2px 7px; border-radius:3px;
+  flex-shrink:0; margin-top:2px;
+  text-transform: uppercase; letter-spacing:.06em;
+}
+
+.step-arr {
+  font-size:18px; color:var(--text3);
+  transition: transform .2s, color .2s;
+  flex-shrink:0; margin-top:2px;
+}
+.step.open .step-arr { transform:rotate(90deg); color:var(--orange); }
+
+.step-body {
+  display:none;
+  padding: 0 18px 18px 60px;
+  border-top: 1px solid var(--border);
+}
+.step.open .step-body { display:block; padding-top:16px; }
+
+.step-body p { font-size:15.5px; color:var(--text2); line-height:1.7; margin-bottom:12px; }
+
+.step-body ul { list-style:none; display:flex; flex-direction:column; gap:7px; margin-bottom:12px; }
+.step-body ul li {
+  font-size:15.5px; color:var(--text);
+  display:flex; gap:10px; line-height:1.5;
+}
+.step-body ul li::before { content:'▸'; color:var(--orange); flex-shrink:0; font-size:12px; margin-top:2px; }
+
+/* ── CODE ───────────────────────────────── */
+.code-block {
+  background: #090a0c;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.code-top {
+  background: #111316;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.code-dots { display:flex; gap:5px; }
+.code-dots span {
+  width:9px; height:9px; border-radius:50%;
+}
+.code-dots span:nth-child(1) { background:#ff5f57; }
+.code-dots span:nth-child(2) { background:#febc2e; }
+.code-dots span:nth-child(3) { background:#28c840; }
+
+.code-file {
+  font-family: var(--mono); font-size:12px;
+  color: var(--text3); letter-spacing:.06em;
+}
+
+pre {
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: #c8ccd8;
+  line-height: 1.85;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.cm  { color:#4a5568; font-style:italic; }
+.kw  { color:#f97316; }
+.st  { color:#86efac; }
+.ky  { color:#93c5fd; }
+.vl  { color:#fcd34d; }
+
+/* ── CALLOUTS ───────────────────────────── */
+.callout {
+  border-radius: 5px;
+  padding: 11px 14px;
+  font-size: 15px;
+  line-height: 1.55;
+  margin-top: 12px;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.callout-icon { flex-shrink:0; font-size:16px; margin-top:1px; }
+.callout.tip  { background:var(--bluebg);   border-left:2px solid var(--blue);   color:var(--text2); }
+.callout.warn { background:var(--orangebg); border-left:2px solid var(--orange); color:var(--text2); }
+.callout.ok   { background:var(--greenbg);  border-left:2px solid var(--green);  color:var(--text2); }
+.callout strong { color:var(--text); }
+
+/* ── OPTIONS TABLE ──────────────────────── */
+.opts-table {
+  width:100%; border-collapse:collapse;
+  font-size:15px; margin-top:10px;
+}
+.opts-table th {
+  text-align:left; padding:8px 12px;
+  font-family:var(--mono); font-size:11px;
+  letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text3); background:var(--bg3);
+  border-bottom:1px solid var(--border);
+}
+.opts-table td {
+  padding:10px 12px;
+  border-bottom:1px solid var(--border);
+  color:var(--text2); vertical-align:middle;
+}
+.opts-table tr:last-child td { border-bottom:none; }
+.opts-table tr:hover td { background:var(--bg3); }
+.opts-table code {
+  font-family:var(--mono); font-size:13px;
+  background:var(--bg3); color:var(--orange2);
+  padding:1px 6px; border-radius:3px;
+}
+
+/* ── TROUBLE ────────────────────────────── */
+.trouble-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px;
+}
+@media(max-width:580px){ .trouble-grid { grid-template-columns:1fr; } }
+.ti {
+  background:var(--bg2); border:1px solid var(--border);
+  border-radius:7px; padding:14px 16px;
+  transition:border-color .2s;
+}
+.ti:hover { border-color:var(--border2); }
+.tq { font-family:var(--mono); font-size:13px; font-weight:600; color:var(--red); margin-bottom:7px; line-height:1.4; }
+.ta { font-size:14.5px; color:var(--text2); line-height:1.6; }
+.ta code { font-family:var(--mono); font-size:12.5px; background:var(--bg3); color:var(--orange2); padding:1px 5px; border-radius:3px; }
+
+/* ── SUMMARY TABLE ──────────────────────── */
+.summary-table {
+  width:100%; border-collapse:collapse; font-size:15.5px;
+  border:1px solid var(--border); border-radius:8px; overflow:hidden;
+}
+.summary-table th {
+  text-align:left; padding:10px 16px;
+  font-family:var(--mono); font-size:11px;
+  letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text3); background:var(--bg3);
+  border-bottom:1px solid var(--border);
+}
+.summary-table td {
+  padding:11px 16px; border-bottom:1px solid var(--border);
+  color:var(--text2); vertical-align:middle;
+}
+.summary-table tr:last-child td { border-bottom:none; }
+.summary-table tr:hover td { background:var(--bg3); }
+
+.badge {
+  display:inline-flex; align-items:center; gap:5px;
+  font-family:var(--mono); font-size:11px; font-weight:600;
+  padding:2px 9px; border-radius:3px; letter-spacing:.06em; text-transform:uppercase;
+}
+.badge.done { background:var(--greenbg); color:var(--green); border:1px solid rgba(74,222,128,.2); }
+.badge.new  { background:var(--orangebg); color:var(--orange); border:1px solid rgba(249,115,22,.2); }
+.badge.opt  { background:var(--bluebg); color:var(--blue); border:1px solid rgba(96,165,250,.2); }
+
+/* ── FOOTER ─────────────────────────────── */
+.footer {
+  margin-top:60px; padding-top:20px;
+  border-top:1px solid var(--border);
+  display:flex; justify-content:space-between; align-items:center;
+  font-family:var(--mono); font-size:12px; color:var(--text3);
+}
+.footer a { color:var(--orange2); text-decoration:none; }
+
+
+/* ── COPY BUTTON ────────────────────────────── */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text3);
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all .18s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.copy-btn:hover {
+  color: var(--orange);
+  border-color: var(--orange);
+  background: var(--orangebg);
+}
+.copy-btn.copied {
+  color: var(--green);
+  border-color: var(--green);
+  background: var(--greenbg);
+}
+.copy-btn svg {
+  width: 12px; height: 12px;
+  flex-shrink: 0;
+}
+
+
+/* ── CHANGELOG ACCORDION ────────────────── */
+.cl-accordion {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 36px;
+  animation: fadeUp .5s .05s ease both;
+}
+
+.cl-accordion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--bg2);
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s;
+  flex-wrap: wrap;
+}
+
+.cl-accordion-head:hover {
+  background: var(--bg3);
+}
+
+.cl-accordion-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cl-accordion-icon {
+  color: var(--orange);
+  font-size: 14px;
+  transition: transform .2s;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.cl-accordion.open .cl-accordion-icon {
+  transform: rotate(90deg);
+}
+
+.cl-accordion-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.cl-accordion-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  padding: 1px 8px;
+  border-radius: 3px;
+}
+
+.cl-accordion-pills {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cl-accordion-body {
+  display: none;
+  border-top: 1px solid var(--border);
+}
+
+.cl-accordion.open .cl-accordion-body {
+  display: block;
+}
+
+.cl-accordion .cl {
+  border: none;
+  border-radius: 0;
+}
+
+.cl-accordion .cl-row {
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+/* ── ANIM ───────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(14px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+</style>
 </head>
-
 <body>
-  <div class="wrap">
+<div class="wrap">
 
-    <!-- HERO -->
-    <div class="hero">
-      <div>
-        <div class="hero-eyebrow">
-          <div class="version-chip">v1.0.0 — April 2026</div>
-          <div class="live-dot"></div>
-        </div>
-        <h1>Smart<br><span class="hl">Print</span><br>Server</h1>
-        <p class="hero-desc">Canon LBP7110cw · CUPS Docker · zr0aces/PrintBot · AirPrint · Windows IPP · Home Assistant.
-          Complete setup guide — updated for the v1.0.0 release.</p>
+  <!-- HERO -->
+  <div class="hero">
+    <div>
+      <div class="hero-eyebrow">
+        <div class="version-chip">v1.0.0 — April 2026</div>
+        <div class="live-dot"></div>
       </div>
-      <div class="hero-meta">
-        <div class="meta-item">Bot <span>python-telegram-bot 22.7</span></div>
-        <div class="meta-item">Python <span>3.12</span></div>
-        <div class="meta-item">Image <span>ghcr.io/zr0aces/printbot</span></div>
-        <div class="meta-item">Arch <span>amd64 · arm64</span></div>
-        <div class="meta-item">Host <span>Raspberry Pi 4 / Linux</span></div>
+      <h1>Smart<br><span class="hl">Print</span><br>Server</h1>
+      <p class="hero-desc">Canon LBP7110cw · CUPS Docker · zr0aces/PrintBot · AirPrint · Windows IPP · Home Assistant. Complete setup guide — updated for the v1.0.0 release.</p>
+    </div>
+    <div class="hero-meta">
+      <div class="meta-item">Bot <span>python-telegram-bot 22.7</span></div>
+      <div class="meta-item">Python <span>3.12</span></div>
+      <div class="meta-item">Image <span>ghcr.io/zr0aces/printbot</span></div>
+      <div class="meta-item">Arch <span>amd64 · arm64</span></div>
+      <div class="meta-item">Host <span>Raspberry Pi 4 / Linux</span></div>
+    </div>
+  </div>
+
+  <!-- WHAT'S NEW BANNER -->
+  <div class="new-banner">
+    <div class="new-banner-icon">🚀</div>
+    <div>
+      <div class="new-banner-head">What's new in v1.0.0</div>
+      <div class="new-banner-body">
+        The repo (<a href="https://github.com/zr0aces/PrintBot" target="_blank">github.com/zr0aces/PrintBot</a>) shipped its first official release with all 6 improvements built in — print options, HA webhook, /jobs, /cancel, auto-cleanup, and better errors. Multi-arch Docker images are now published automatically to GHCR on every tag push. No need to build from source.
+      </div>
+      <div class="chip-row">
+        <span class="chip new">bw / 2x / 3x options</span>
+        <span class="chip new">/jobs command</span>
+        <span class="chip new">/cancel command</span>
+        <span class="chip new">HA webhook built-in</span>
+        <span class="chip new">auto file cleanup</span>
+        <span class="chip new">GHCR pre-built image</span>
+        <span class="chip new">multi-arch amd64+arm64</span>
+        <span class="chip new">python-telegram-bot 22.7</span>
+        <span class="chip">cups.sock mount</span>
+        <span class="chip">no shell injection</span>
+        <span class="chip">ALLOWED_CHAT_IDS</span>
       </div>
     </div>
+  </div>
 
-    <!-- WHAT'S NEW BANNER -->
-    <div class="new-banner">
-      <div class="new-banner-icon">🚀</div>
-      <div>
-        <div class="new-banner-head">What's new in v1.0.0</div>
-        <div class="new-banner-body">
-          The repo (<a href="https://github.com/zr0aces/PrintBot" target="_blank">github.com/zr0aces/PrintBot</a>)
-          shipped its first official release with all 6 improvements built in — print options, HA webhook, /jobs,
-          /cancel, auto-cleanup, and better errors. Multi-arch Docker images are now published automatically to GHCR on
-          every tag push. No need to build from source.
-        </div>
-        <div class="chip-row">
-          <span class="chip new">bw / 2x / 3x options</span>
-          <span class="chip new">/jobs command</span>
-          <span class="chip new">/cancel command</span>
-          <span class="chip new">HA webhook built-in</span>
-          <span class="chip new">auto file cleanup</span>
-          <span class="chip new">GHCR pre-built image</span>
-          <span class="chip new">multi-arch amd64+arm64</span>
-          <span class="chip new">python-telegram-bot 22.7</span>
-          <span class="chip">cups.sock mount</span>
-          <span class="chip">no shell injection</span>
-          <span class="chip">ALLOWED_CHAT_IDS</span>
-        </div>
+  <!-- CHANGELOG — collapsible, collapsed by default -->
+  <div class="cl-accordion" id="cl-accordion">
+    <div class="cl-accordion-head" onclick="toggleChangelog()">
+      <div class="cl-accordion-left">
+        <span class="cl-accordion-icon">▸</span>
+        <span class="cl-accordion-title">Changelog</span>
+        <span class="cl-accordion-count">14 changes</span>
+      </div>
+      <div class="cl-accordion-pills">
+        <span class="cl-tag add" style="font-size:10px;">10 NEW</span>
+        <span class="cl-tag chg" style="font-size:10px;">3 CHANGED</span>
+        <span class="cl-tag del" style="font-size:10px;">1 REMOVED</span>
       </div>
     </div>
+    <div class="cl-accordion-body" id="cl-body">
+      <div class="cl">
+        <div class="cl-row"><span class="cl-tag add">NEW</span> v1.0.0 tagged release — pre-built image on GHCR, no local build required</div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> Print options (<code>bw</code>, <code>2x</code>, <code>3x</code>, <code>4x</code>, <code>bw 2x</code>) now built into the bot natively</div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> <code>/jobs</code> command — shows live print queue via <code>lpstat -o</code></div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> <code>/cancel</code> command — cancels all pending jobs via <code>cancel -a</code></div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> HA webhook (<code>HA_URL</code> + <code>HA_TOKEN</code>) fires <code>printbot_job_sent</code> event after each print</div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> Auto file cleanup after successful print — <code>/clean</code> kept as fallback only</div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> Detailed error messages — <code>lp</code> stderr surfaced in Telegram reply on failure</div>
+        <div class="cl-row"><span class="cl-tag add">FIXED</span> CUPS Dockerfiles: replaced <code>cupsctl</code> (fails at build-time — no daemon) with pure <code>sed</code>/<code>echo</code> edits; removed broken <code>canonLBP setup</code></div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> CUPS step 2.1: choose Canon CAPT or UFR II LT — side-by-side Dockerfiles + interactive tab switcher</div>
+        <div class="cl-row"><span class="cl-tag add">NEW</span> UFR II LT: native amd64/arm64, better color, no ccpd daemon — recommended for Raspberry Pi 4</div>
+        <div class="cl-row"><span class="cl-tag chg">CHANGED</span> docker-compose.yml pulls <code>ghcr.io/zr0aces/printbot:1.0.0</code> — no local build step needed</div>
+        <div class="cl-row"><span class="cl-tag chg">CHANGED</span> HA integration uses <code>printbot_job_sent</code> webhook event instead of polling <code>lpstat</code></div>
+        <div class="cl-row"><span class="cl-tag chg">CHANGED</span> <code>.env</code> now includes <code>HA_URL</code> + <code>HA_TOKEN</code> optional lines for webhook</div>
+        <div class="cl-row"><span class="cl-tag del">REMOVED</span> Manual <code>docker compose build</code> step — image is pre-built and multi-arch</div>
+      </div>
+    </div>
+  </div>
 
-    <!-- CHANGELOG -->
-    <div class="section">
-      <div class="cl-wrap" onclick="toggle(this, event)">
-        <div class="cl-head">
-          <span class="section-num" style="margin-top:2px;">DIFF</span>
-          <div style="flex:1;">
-            <div class="section-title">Changelog</div>
-            <div style="font-size:13px; color:var(--text3); margin-top:2px;">v1.0.0 improvements and historical changes
-            </div>
-          </div>
+  <!-- ARCHITECTURE -->
+  <div class="arch">
+    <div class="arch-label">System Architecture</div>
+    <div class="arch-rows">
+      <div class="arch-row">
+        <div class="anode bl">📱 iPhone/iPad</div>
+        <div class="arrow">──AirPrint/mDNS──▶</div>
+        <div class="anode gr">🐳 CUPS (host net)</div>
+        <div class="arrow">──▶</div>
+        <div class="anode dk">🖨 Canon LBP7110cw</div>
+      </div>
+      <div class="arch-row">
+        <div class="anode bl">💻 Windows (no drv)</div>
+        <div class="arrow">──IPP :631──▶</div>
+        <div class="anode gr">🐳 CUPS</div>
+        <div class="arrow">──▶</div>
+        <div class="anode dk">🖨 Canon</div>
+      </div>
+      <div class="arch-row">
+        <div class="anode or">✈ Telegram</div>
+        <div class="arrow">──▶</div>
+        <div class="anode or">🐳 PrintBot v1.0.0</div>
+        <div class="arrow">──cups.sock──▶</div>
+        <div class="anode gr">🐳 CUPS</div>
+        <div class="arrow">──▶</div>
+        <div class="anode dk">🖨 Canon</div>
+      </div>
+      <div class="arch-row">
+        <div class="anode or">🐳 PrintBot</div>
+        <div class="arrow">──printbot_job_sent──▶</div>
+        <div class="anode yl">🏠 Home Assistant</div>
+        <div class="arrow">──▶</div>
+        <div class="anode yl">📊 Dashboard + Alerts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════ -->
+  <!-- PHASE 1 -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">01</span>
+      <span class="section-title">Prepare the Host</span>
+      <span class="section-sub">Docker · Folders · Printer IP</span>
+    </div>
+    <div class="divider"></div>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">1.1</span>
+          <span class="step-t">Install Docker &amp; Docker Compose</span>
           <span class="step-arr">›</span>
         </div>
-        <div class="cl-body">
-          <div class="cl compact">
-            <div class="cl-row"><span class="cl-tag add">NEW</span> v1.0.0 tagged release — pre-built image on GHCR, no
-              local build required</div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> Print options (<code>bw</code>, <code>2x</code>,
-              <code>3x</code>, <code>4x</code>, <code>bw 2x</code>) now built into the bot natively
-            </div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> <code>/jobs</code> command — shows live print queue
-              via <code>lpstat -o</code></div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> <code>/cancel</code> command — cancels all pending
-              jobs via <code>cancel -a</code></div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> HA webhook (<code>HA_URL</code> +
-              <code>HA_TOKEN</code>) fires <code>printbot_job_sent</code> event after each print
-            </div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> Auto file cleanup after successful print —
-              <code>/clean</code> kept as fallback only
-            </div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> Detailed error messages — <code>lp</code> stderr
-              included in Telegram reply on failure</div>
-            <div class="cl-row"><span class="cl-tag chg">CHANGED</span> docker-compose.yml now pulls
-              <code>ghcr.io/zr0aces/printbot:1.0.0</code> instead of building locally
-            </div>
-            <div class="cl-row"><span class="cl-tag chg">CHANGED</span> HA sensor uses <code>printbot_job_sent</code>
-              event trigger instead of polling lpstat via command_line</div>
-            <div class="cl-row"><span class="cl-tag chg">CHANGED</span> <code>.env.example</code> now includes
-              <code>HA_URL</code> and <code>HA_TOKEN</code> as optional commented lines
-            </div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> CUPS step 2.1: choose between <strong>Canon
-                CAPT</strong> or <strong>Canon UFR II LT</strong> — side-by-side Dockerfiles, comparison table,
-              interactive tab switcher</div>
-            <div class="cl-row"><span class="cl-tag add">NEW</span> UFR II LT: native amd64/arm64 packages, better
-              color, no ccpd daemon, recommended for Raspberry Pi 4</div>
-            <div class="cl-row"><span class="cl-tag del">REMOVED</span> Manual <code>docker compose build</code> step —
-              image is pre-built and multi-arch</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ARCHITECTURE -->
-    <div class="arch">
-      <div class="arch-label">System Architecture</div>
-      <div class="arch-rows">
-        <div class="arch-row">
-          <div class="anode bl">📱 iPhone/iPad</div>
-          <div class="arrow">──AirPrint/mDNS──▶</div>
-          <div class="anode gr">🐳 CUPS (host net)</div>
-          <div class="arrow">──▶</div>
-          <div class="anode dk">🖨 Canon LBP7110cw</div>
-        </div>
-        <div class="arch-row">
-          <div class="anode bl">💻 Windows (no drv)</div>
-          <div class="arrow">──IPP :631──▶</div>
-          <div class="anode gr">🐳 CUPS</div>
-          <div class="arrow">──▶</div>
-          <div class="anode dk">🖨 Canon</div>
-        </div>
-        <div class="arch-row">
-          <div class="anode or">✈ Telegram</div>
-          <div class="arrow">──▶</div>
-          <div class="anode or">🐳 PrintBot v1.0.0</div>
-          <div class="arrow">──cups.sock──▶</div>
-          <div class="anode gr">🐳 CUPS</div>
-          <div class="arrow">──▶</div>
-          <div class="anode dk">🖨 Canon</div>
-        </div>
-        <div class="arch-row">
-          <div class="anode or">🐳 PrintBot</div>
-          <div class="arrow">──printbot_job_sent──▶</div>
-          <div class="anode yl">🏠 Home Assistant</div>
-          <div class="arrow">──▶</div>
-          <div class="anode yl">📊 Dashboard + Alerts</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══════════════════════════════════════ -->
-    <!-- PHASE 1 -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">01</span>
-        <span class="section-title">Prepare the Host</span>
-        <span class="section-sub">Docker · Folders · Printer IP</span>
-      </div>
-      <div class="divider"></div>
-      <div class="steps">
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">1.1</span>
-            <span class="step-t">Install Docker &amp; Docker Compose</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>curl -fsSL https://get.docker.com | sh
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 sudo apt install docker-compose-plugin -y
 newgrp docker</pre>
-            </div>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div><strong>Recommended:</strong> Raspberry Pi 4 (arm64) — always-on, low power. The GHCR image supports
-                arm64 natively.</div>
-            </div>
           </div>
+          <div class="callout tip"><span class="callout-icon">💡</span><div><strong>Recommended:</strong> Raspberry Pi 4 (arm64) — always-on, low power. The GHCR image supports arm64 natively.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">1.2</span>
-            <span class="step-t">Find Printer IP and Lock it with DHCP Reservation</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <ul>
-              <li>Hold the printer's <strong>Status</strong> button ~3 sec — prints a network info page with IP</li>
-              <li>In your router, find the printer's MAC → assign a permanent DHCP reservation (e.g.
-                <code>192.168.1.50</code>)
-              </li>
-              <li>This IP is used in the CUPS printer URI and must never change</li>
-            </ul>
-          </div>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">1.2</span>
+          <span class="step-t">Find Printer IP and Lock it with DHCP Reservation</span>
+          <span class="step-arr">›</span>
         </div>
+        <div class="step-body">
+          <ul>
+            <li>Hold the printer's <strong>Status</strong> button ~3 sec — prints a network info page with IP</li>
+            <li>In your router, find the printer's MAC → assign a permanent DHCP reservation (e.g. <code>192.168.1.50</code>)</li>
+            <li>This IP is used in the CUPS printer URI and must never change</li>
+          </ul>
+        </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">1.3</span>
-            <span class="step-t">Create Project Folder — No git clone needed</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Since v1.0.0 ships a pre-built image, you only need the compose file and a .env — no cloning required.
-            </p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>mkdir -p smart-print/{cups,ha/config}
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">1.3</span>
+          <span class="step-t">Create Project Folder — No git clone needed</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>Since v1.0.0 ships a pre-built image, you only need the compose file and a .env — no cloning required.</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>mkdir -p smart-print/{cups,ha/config}
 cd smart-print</pre>
-            </div>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">tree</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>smart-print/
+          </div>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">tree</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>smart-print/
 ├── cups/
 │   ├── Dockerfile       <span class="cm"># you write this (Canon driver)</span>
 │   ├── config/          <span class="cm"># CUPS config persisted here</span>
@@ -1215,98 +814,74 @@ cd smart-print</pre>
 ├── ha/config/           <span class="cm"># Home Assistant config</span>
 ├── .env                 <span class="cm"># PrintBot secrets</span>
 └── docker-compose.yml   <span class="cm"># master compose file</span></pre>
-            </div>
           </div>
         </div>
-
       </div>
+
     </div>
+  </div>
 
-    <!-- ══════════════════════════════════════ -->
-    <!-- PHASE 2 -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">02</span>
-        <span class="section-title">CUPS Print Server</span>
-        <span class="section-sub">Canon Driver · AirPrint · IPP</span>
-      </div>
-      <div class="divider"></div>
-      <div class="steps">
+  <!-- ══════════════════════════════════════ -->
+  <!-- PHASE 2 -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">02</span>
+      <span class="section-title">CUPS Print Server</span>
+      <span class="section-sub">Canon Driver · AirPrint · IPP</span>
+    </div>
+    <div class="divider"></div>
+    <div class="steps">
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">2.1</span>
-            <span class="step-t">Choose a Canon Driver — CAPT vs UFR II LT</span>
-            <span class="step-arr">›</span>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">2.1</span>
+          <span class="step-t">Choose a Canon Driver — CAPT vs UFR II LT</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>The LBP7110cw supports two Canon Linux driver stacks. Choose one based on your needs, then use the matching Dockerfile below.</p>
+
+          <!-- driver comparison table -->
+          <table class="opts-table" style="margin-bottom:18px;">
+            <thead><tr><th>Driver</th><th>Type</th><th>Print Quality</th><th>Architecture</th><th>Best For</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Canon CAPT</strong><br><span style="font-family:var(--mono);font-size:11px;color:var(--text3);">cndrvcups-capt</span></td>
+                <td>Proprietary CAPT protocol</td>
+                <td>Good — standard output</td>
+                <td>i386 (32-bit .deb)</td>
+                <td>Simple setup, legacy systems</td>
+              </tr>
+              <tr>
+                <td><strong>Canon UFR II LT</strong><br><span style="font-family:var(--mono);font-size:11px;color:var(--text3);">cndrvcups-ufr2lt</span></td>
+                <td>UFR II — Canon's modern raster</td>
+                <td>Better — richer color fidelity</td>
+                <td>amd64 + arm64 native</td>
+                <td>Raspberry Pi 4, better quality</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="callout tip"><span class="callout-icon">💡</span><div><strong>Recommendation:</strong> Use <strong>UFR II LT</strong> on Raspberry Pi 4 (arm64) — it has native arm64 support and better color output. Use <strong>CAPT</strong> on older x86 hosts or if UFR II has issues with your specific firmware version.</div></div>
+
+          <!-- Tab switcher -->
+          <div style="display:flex;gap:0;margin-top:20px;margin-bottom:0;border-radius:6px 6px 0 0;overflow:hidden;border:1px solid var(--border);border-bottom:none;">
+            <button id="tab-capt" onclick="showDriver('capt'); event.stopPropagation();"
+              style="flex:1;padding:10px 16px;background:var(--orangebg2);border:none;border-right:1px solid var(--border);color:var(--orange);font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
+              ▶ CAPT Driver
+            </button>
+            <button id="tab-ufr2" onclick="showDriver('ufr2'); event.stopPropagation();"
+              style="flex:1;padding:10px 16px;background:var(--bg3);border:none;color:var(--text3);font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
+              UFR II LT Driver
+            </button>
           </div>
-          <div class="step-body">
-            <p>The LBP7110cw supports two Canon Linux driver stacks. Choose one based on your needs, then use the
-              matching Dockerfile below.</p>
 
-            <!-- driver comparison table -->
-            <table class="opts-table" style="margin-bottom:18px;">
-              <thead>
-                <tr>
-                  <th>Driver</th>
-                  <th>Type</th>
-                  <th>Print Quality</th>
-                  <th>Architecture</th>
-                  <th>Best For</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><strong>Canon CAPT</strong><br><span
-                      style="font-family:var(--mono);font-size:11px;color:var(--text3);">cndrvcups-capt</span></td>
-                  <td>Proprietary CAPT protocol</td>
-                  <td>Good — standard output</td>
-                  <td>i386 (32-bit .deb)</td>
-                  <td>Simple setup, legacy systems</td>
-                </tr>
-                <tr>
-                  <td><strong>Canon UFR II LT</strong><br><span
-                      style="font-family:var(--mono);font-size:11px;color:var(--text3);">cndrvcups-ufr2lt</span></td>
-                  <td>UFR II — Canon's modern raster</td>
-                  <td>Better — richer color fidelity</td>
-                  <td>amd64 + arm64 native</td>
-                  <td>Raspberry Pi 4, better quality</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div><strong>Recommendation:</strong> Use <strong>UFR II LT</strong> on Raspberry Pi 4 (arm64) — it has
-                native arm64 support and better color output. Use <strong>CAPT</strong> on older x86 hosts or if UFR II
-                has issues with your specific firmware version.</div>
-            </div>
-
-            <!-- Tab switcher -->
-            <div
-              style="display:flex;gap:0;margin-top:20px;margin-bottom:0;border-radius:6px 6px 0 0;overflow:hidden;border:1px solid var(--border);border-bottom:none;">
-              <button id="tab-capt" onclick="showDriver('capt'); event.stopPropagation();"
-                style="flex:1;padding:10px 16px;background:var(--orangebg2);border:none;border-right:1px solid var(--border);color:var(--orange);font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
-                ▶ CAPT Driver
-              </button>
-              <button id="tab-ufr2" onclick="showDriver('ufr2'); event.stopPropagation();"
-                style="flex:1;padding:10px 16px;background:var(--bg3);border:none;color:var(--text3);font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
-                UFR II LT Driver
-              </button>
-            </div>
-
-            <!-- CAPT Dockerfile -->
-            <div id="driver-capt">
-              <div class="code-block" style="border-radius:0 0 6px 6px;margin-top:0;">
-                <div class="code-top">
-                  <div class="code-dots"><span></span><span></span><span></span></div>
-                  <div class="code-file">cups/Dockerfile — CAPT</div><button class="copy-btn"
-                    onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2" />
-                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                    </svg>Copy</button>
-                </div>
-                <pre>FROM ubuntu:20.04
+          <!-- CAPT Dockerfile -->
+          <div id="driver-capt">
+            <div class="code-block" style="border-radius:0 0 6px 6px;margin-top:0;">
+              <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">cups/Dockerfile — CAPT</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+              <pre>FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
@@ -1328,34 +903,27 @@ RUN wget -q -O /tmp/capt-common.deb \
   && dpkg -i /tmp/capt-common.deb /tmp/capt.deb || apt-get install -f -y \
   && rm /tmp/capt-common.deb /tmp/capt.deb
 
-<span class="cm"># Open CUPS to LAN, enable printer sharing</span>
-RUN sed -i 's/Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf \
-  && cupsctl --share-printers --remote-any
+<span class="cm"># Configure CUPS via file edits only — no daemon needed during build</span>
+<span class="cm"># cupsctl requires a running daemon, so we edit cupsd.conf directly instead</span>
+RUN sed -i 's/Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf && \
+    sed -i 's/Listen \/var\/run\/cups\/cups.sock/Port 631/' /etc/cups/cupsd.conf && \
+    sed -i '/&lt;Location \/&gt;/,/&lt;\/Location&gt;/ s/Order allow,deny/Order allow,deny\n  Allow @LOCAL/' /etc/cups/cupsd.conf && \
+    sed -i '/&lt;Location \/admin&gt;/,/&lt;\/Location&gt;/ s/Order allow,deny/Order allow,deny\n  Allow @LOCAL/' /etc/cups/cupsd.conf && \
+    echo 'Browsing On' &gt;&gt; /etc/cups/cupsd.conf && \
+    echo 'BrowseLocalProtocols dnssd' &gt;&gt; /etc/cups/cupsd.conf && \
+    echo 'DefaultShared Yes' &gt;&gt; /etc/cups/cupsd.conf
 
 EXPOSE 631
 CMD service avahi-daemon start && /usr/sbin/cupsd -f</pre>
-              </div>
-              <div class="callout warn" style="margin-top:10px;"><span class="callout-icon">⚠️</span>
-                <div><strong>CAPT note:</strong> The CAPT driver requires a separate daemon (<code>ccpd</code>) to be
-                  running alongside CUPS. After adding the printer in CUPS Web UI, also run:
-                  <code>docker exec cups-server /etc/init.d/ccpd start</code>
-                </div>
-              </div>
             </div>
+            <div class="callout warn" style="margin-top:10px;"><span class="callout-icon">⚠️</span><div><strong>CAPT note:</strong> The CAPT driver requires a separate daemon (<code>ccpd</code>) to be running alongside CUPS. After adding the printer in CUPS Web UI, also run: <code>docker exec cups-server /etc/init.d/ccpd start</code></div></div>
+          </div>
 
-            <!-- UFR II LT Dockerfile -->
-            <div id="driver-ufr2" style="display:none;">
-              <div class="code-block" style="border-radius:0 0 6px 6px;margin-top:0;">
-                <div class="code-top">
-                  <div class="code-dots"><span></span><span></span><span></span></div>
-                  <div class="code-file">cups/Dockerfile — UFR II LT</div><button class="copy-btn"
-                    onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2" />
-                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                    </svg>Copy</button>
-                </div>
-                <pre>FROM ubuntu:22.04
+          <!-- UFR II LT Dockerfile -->
+          <div id="driver-ufr2" style="display:none;">
+            <div class="code-block" style="border-radius:0 0 6px 6px;margin-top:0;">
+              <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">cups/Dockerfile — UFR II LT</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+              <pre>FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
@@ -1372,65 +940,47 @@ RUN wget -q -O /tmp/ufr2lt-common.deb \
   && dpkg -i /tmp/ufr2lt-common.deb || apt-get install -f -y \
   && rm /tmp/ufr2lt-common.deb
 
-<span class="cm"># Register UFR II LT PPD with CUPS</span>
-RUN /usr/sbin/canonLBP setup 2>/dev/null || true
-
-<span class="cm"># Open CUPS to LAN, enable printer sharing</span>
-RUN sed -i 's/Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf \
-  && cupsctl --share-printers --remote-any
+<span class="cm"># Configure CUPS via file edits only — no daemon needed during build</span>
+<span class="cm"># UFR II LT PPDs are auto-registered by the driver installer</span>
+<span class="cm"># cupsctl requires a running daemon so we edit cupsd.conf directly</span>
+RUN sed -i 's/Listen localhost:631/Listen 0.0.0.0:631/' /etc/cups/cupsd.conf && \
+    sed -i 's/Listen \/var\/run\/cups\/cups.sock/Port 631/' /etc/cups/cupsd.conf && \
+    sed -i '/&lt;Location \/&gt;/,/&lt;\/Location&gt;/ s/Order allow,deny/Order allow,deny\n  Allow @LOCAL/' /etc/cups/cupsd.conf && \
+    sed -i '/&lt;Location \/admin&gt;/,/&lt;\/Location&gt;/ s/Order allow,deny/Order allow,deny\n  Allow @LOCAL/' /etc/cups/cupsd.conf && \
+    echo 'Browsing On' &gt;&gt; /etc/cups/cupsd.conf && \
+    echo 'BrowseLocalProtocols dnssd' &gt;&gt; /etc/cups/cupsd.conf && \
+    echo 'DefaultShared Yes' &gt;&gt; /etc/cups/cupsd.conf
 
 EXPOSE 631
 CMD service avahi-daemon start && /usr/sbin/cupsd -f</pre>
-              </div>
-              <div class="callout ok" style="margin-top:10px;"><span class="callout-icon">✅</span>
-                <div><strong>UFR II LT note:</strong> No separate daemon needed — the driver integrates directly as a
-                  CUPS filter. Works cleanly on arm64 (Raspberry Pi 4). When adding the printer in CUPS, choose driver:
-                  <strong>Canon LBP7110C UFR II</strong> from the list.
-                </div>
-              </div>
             </div>
+            <div class="callout ok" style="margin-top:10px;"><span class="callout-icon">✅</span><div><strong>UFR II LT note:</strong> No separate daemon needed — the driver integrates directly as a CUPS filter. Works cleanly on arm64 (Raspberry Pi 4). When adding the printer in CUPS, choose driver: <strong>Canon LBP7110C UFR II</strong> from the list.</div></div>
+          </div>
 
-            <!-- shared add-printer step after selecting driver -->
-            <div
-              style="margin-top:18px;padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;">
-              <div
-                style="font-family:var(--mono);font-size:12px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">
-                After choosing either driver — add printer in CUPS Web UI</div>
-              <ol
-                style="list-style:decimal;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;color:var(--text2);">
-                <li>Open <strong style="color:var(--text);">http://[host-ip]:631</strong> → Administration → Add Printer
-                </li>
-                <li>Choose <strong style="color:var(--text);">AppSocket/HP JetDirect</strong> → URI: <code
-                    style="font-family:var(--mono);font-size:13px;background:var(--bg2);color:var(--orange2);padding:1px 5px;border-radius:3px;">socket://192.168.1.50:9100</code>
-                </li>
-                <li><strong style="color:var(--text);">CAPT:</strong> select <em>Canon LBP7110C CAPT</em> from driver
-                  list</li>
-                <li><strong style="color:var(--text);">UFR II LT:</strong> select <em>Canon LBP7110C UFR II</em> from
-                  driver list</li>
-                <li>Enable <strong style="color:var(--text);">"Share This Printer"</strong> → Set as Default → Save</li>
-              </ol>
-            </div>
+          <!-- shared add-printer step after selecting driver -->
+          <div style="margin-top:18px;padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">After choosing either driver — add printer in CUPS Web UI</div>
+            <ol style="list-style:decimal;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:15px;color:var(--text2);">
+              <li>Open <strong style="color:var(--text);">http://[host-ip]:631</strong> → Administration → Add Printer</li>
+              <li>Choose <strong style="color:var(--text);">AppSocket/HP JetDirect</strong> → URI: <code style="font-family:var(--mono);font-size:13px;background:var(--bg2);color:var(--orange2);padding:1px 5px;border-radius:3px;">socket://192.168.1.50:9100</code></li>
+              <li><strong style="color:var(--text);">CAPT:</strong> select <em>Canon LBP7110C CAPT</em> from driver list</li>
+              <li><strong style="color:var(--text);">UFR II LT:</strong> select <em>Canon LBP7110C UFR II</em> from driver list</li>
+              <li>Enable <strong style="color:var(--text);">"Share This Printer"</strong> → Set as Default → Save</li>
+            </ol>
           </div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">2.2</span>
-            <span class="step-t">Create master docker-compose.yml</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">docker-compose.yml</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>services:
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">2.2</span>
+          <span class="step-t">Create master docker-compose.yml</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">docker-compose.yml</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>services:
 
   <span class="cm"># ── CUPS: AirPrint + IPP ─────────────────────────────</span>
   cups:
@@ -1464,32 +1014,21 @@ CMD service avahi-daemon start && /usr/sbin/cupsd -f</pre>
     volumes:
       - ./ha/config:/config
       - /var/run/docker.sock:/var/run/docker.sock  <span class="cm"># needed for command_line sensors</span></pre>
-            </div>
-            <div class="callout ok"><span class="callout-icon">✅</span>
-              <div><strong>No build step!</strong> <code>ghcr.io/zr0aces/printbot:1.0.0</code> is pre-built for both
-                amd64 and arm64. Docker pulls it automatically.</div>
-            </div>
           </div>
+          <div class="callout ok"><span class="callout-icon">✅</span><div><strong>No build step!</strong> <code>ghcr.io/zr0aces/printbot:1.0.0</code> is pre-built for both amd64 and arm64. Docker pulls it automatically.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">2.3</span>
-            <span class="step-t">Create .env file</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">.env</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre><span class="cm"># ── Required ──────────────────────────────────────────</span>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">2.3</span>
+          <span class="step-t">Create .env file</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">.env</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre><span class="cm"># ── Required ──────────────────────────────────────────</span>
 TOKEN=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 <span class="cm"># ── Recommended: restrict who can print ───────────────</span>
@@ -1499,360 +1038,227 @@ ALLOWED_CHAT_IDS=123456789,987654321
 <span class="cm"># ── Optional: Home Assistant webhook ──────────────────</span>
 <span class="cm"># HA_URL=http://homeassistant:8123</span>
 <span class="cm"># HA_TOKEN=your_long_lived_access_token</span></pre>
-            </div>
-            <div class="callout warn"><span class="callout-icon">⚠️</span>
-              <div><strong>Security:</strong> If <code>ALLOWED_CHAT_IDS</code> is empty, anyone can print. Always set it
-                for home use.</div>
-            </div>
           </div>
+          <div class="callout warn"><span class="callout-icon">⚠️</span><div><strong>Security:</strong> If <code>ALLOWED_CHAT_IDS</code> is empty, anyone can print. Always set it for home use.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">2.4</span>
-            <span class="step-t">Start CUPS and add the Canon printer</span>
-            <span class="step-arr">›</span>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">2.4</span>
+          <span class="step-t">Start CUPS and add the Canon printer</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>docker compose up -d cups</pre>
           </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>docker compose up -d cups</pre>
-            </div>
-            <ul>
-              <li>Open <strong>http://[host-ip]:631</strong></li>
-              <li>Administration → Add Printer → login with your Linux user (must be in <code>lpadmin</code> group)</li>
-              <li>Choose <strong>AppSocket/HP JetDirect</strong> → URI: <code>socket://192.168.1.50:9100</code></li>
-              <li>Select <strong>Canon LBP7110</strong> from driver list → enable <strong>"Share This Printer"</strong>
-              </li>
-            </ul>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">verify</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>docker exec cups-server lpstat -p
+          <ul>
+            <li>Open <strong>http://[host-ip]:631</strong></li>
+            <li>Administration → Add Printer → login with your Linux user (must be in <code>lpadmin</code> group)</li>
+            <li>Choose <strong>AppSocket/HP JetDirect</strong> → URI: <code>socket://192.168.1.50:9100</code></li>
+            <li>Select <strong>Canon LBP7110</strong> from driver list → enable <strong>"Share This Printer"</strong></li>
+          </ul>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">verify</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>docker exec cups-server lpstat -p
 <span class="cm"># ✓ printer Canon-LBP7110cw is idle. enabled since...</span></pre>
-            </div>
           </div>
         </div>
-
       </div>
+
     </div>
+  </div>
 
-    <!-- ══════════════════════════════════════ -->
-    <!-- PHASE 3 -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">03</span>
-        <span class="section-title">PrintBot v1.0.0</span>
-        <span class="section-sub">Telegram · CUPS · Options</span>
-      </div>
-      <div class="divider"></div>
-      <div class="steps">
+  <!-- ══════════════════════════════════════ -->
+  <!-- PHASE 3 -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">03</span>
+      <span class="section-title">PrintBot v1.0.0</span>
+      <span class="section-sub">Telegram · CUPS · Options</span>
+    </div>
+    <div class="divider"></div>
+    <div class="steps">
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">3.1</span>
-            <span class="step-t">Create a bot with @BotFather and get your Chat ID</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <ul>
-              <li>Open Telegram → search <strong>@BotFather</strong> → send <code>/newbot</code> → follow prompts</li>
-              <li>Copy the <strong>API token</strong> → paste into <code>.env</code> as <code>TOKEN</code></li>
-              <li>Open <strong>@userinfobot</strong> → send any message → copy your <strong>numeric ID</strong></li>
-              <li>Add all allowed users' IDs comma-separated into <code>ALLOWED_CHAT_IDS</code></li>
-            </ul>
-          </div>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">3.1</span>
+          <span class="step-t">Create a bot with @BotFather and get your Chat ID</span>
+          <span class="step-arr">›</span>
         </div>
+        <div class="step-body">
+          <ul>
+            <li>Open Telegram → search <strong>@BotFather</strong> → send <code>/newbot</code> → follow prompts</li>
+            <li>Copy the <strong>API token</strong> → paste into <code>.env</code> as <code>TOKEN</code></li>
+            <li>Open <strong>@userinfobot</strong> → send any message → copy your <strong>numeric ID</strong></li>
+            <li>Add all allowed users' IDs comma-separated into <code>ALLOWED_CHAT_IDS</code></li>
+          </ul>
+        </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">3.2</span>
-            <span class="step-t">Start PrintBot</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>docker compose up -d printbot
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">3.2</span>
+          <span class="step-t">Start PrintBot</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>docker compose up -d printbot
 docker compose logs -f printbot
 <span class="cm"># ✓ PrintBot starting with allowed chat IDs: [...]</span></pre>
-            </div>
-            <ul>
-              <li>Send <code>/start</code> → welcome message</li>
-              <li>Send <code>/status</code> → <em>🟢 Printer is available</em></li>
-              <li>Send any PDF or photo → <em>✅ Sent to printer!</em></li>
-            </ul>
           </div>
+          <ul>
+            <li>Send <code>/start</code> → welcome message</li>
+            <li>Send <code>/status</code> → <em>🟢 Printer is available</em></li>
+            <li>Send any PDF or photo → <em>✅ Sent to printer!</em></li>
+          </ul>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">3.3</span>
-            <span class="step-t">Bot Commands Reference</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <table class="opts-table">
-              <thead>
-                <tr>
-                  <th>Command</th>
-                  <th>Description</th>
-                  <th>Who</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>/start</code></td>
-                  <td>Welcome message</td>
-                  <td>Everyone</td>
-                </tr>
-                <tr>
-                  <td><code>/help</code></td>
-                  <td>List all commands</td>
-                  <td>Everyone</td>
-                </tr>
-                <tr>
-                  <td><code>/status</code></td>
-                  <td>Live printer check via lpstat -p</td>
-                  <td>Everyone</td>
-                </tr>
-                <tr>
-                  <td><code>/jobs</code></td>
-                  <td>Show current print queue (lpstat -o)</td>
-                  <td>Allowed IDs</td>
-                </tr>
-                <tr>
-                  <td><code>/cancel</code></td>
-                  <td>Cancel all pending jobs (cancel -a)</td>
-                  <td>Allowed IDs</td>
-                </tr>
-                <tr>
-                  <td><code>/clean</code></td>
-                  <td>Delete any orphaned cached files</td>
-                  <td>Allowed IDs</td>
-                </tr>
-                <tr>
-                  <td>Send photo / doc</td>
-                  <td>Print file — A4, fit-to-page</td>
-                  <td>Allowed IDs</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">3.3</span>
+          <span class="step-t">Bot Commands Reference</span>
+          <span class="step-arr">›</span>
         </div>
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">3.4</span>
-            <span class="step-t">Print Options — send before the file</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Send a text message with options <em>before</em> sending the file. Options apply to the next print only,
-              then reset to defaults (color, 1 copy).</p>
-            <table class="opts-table">
-              <thead>
-                <tr>
-                  <th>Message</th>
-                  <th>Effect</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>bw</code> or <code>gray</code></td>
-                  <td>Print in black &amp; white (<code>-o ColorModel=Gray</code>)</td>
-                </tr>
-                <tr>
-                  <td><code>2x</code> / <code>3x</code> / <code>4x</code></td>
-                  <td>Print 2, 3, or 4 copies (<code>-n N</code>)</td>
-                </tr>
-                <tr>
-                  <td><code>bw 2x</code></td>
-                  <td>Combine — B&amp;W + 2 copies</td>
-                </tr>
-                <tr>
-                  <td>anything else</td>
-                  <td>Bot replies: "Unknown option. Use: bw, 2x, 3x, bw 2x"</td>
-                </tr>
-              </tbody>
-            </table>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div>Bot confirms your options: <em>"⚙️ Next print: B&W, 2 copies"</em> — then send the file.</div>
-            </div>
-          </div>
+        <div class="step-body">
+          <table class="opts-table">
+            <thead><tr><th>Command</th><th>Description</th><th>Who</th></tr></thead>
+            <tbody>
+              <tr><td><code>/start</code></td><td>Welcome message</td><td>Everyone</td></tr>
+              <tr><td><code>/help</code></td><td>List all commands</td><td>Everyone</td></tr>
+              <tr><td><code>/status</code></td><td>Live printer check via lpstat -p</td><td>Everyone</td></tr>
+              <tr><td><code>/jobs</code></td><td>Show current print queue (lpstat -o)</td><td>Allowed IDs</td></tr>
+              <tr><td><code>/cancel</code></td><td>Cancel all pending jobs (cancel -a)</td><td>Allowed IDs</td></tr>
+              <tr><td><code>/clean</code></td><td>Delete any orphaned cached files</td><td>Allowed IDs</td></tr>
+              <tr><td>Send photo / doc</td><td>Print file — A4, fit-to-page</td><td>Allowed IDs</td></tr>
+            </tbody>
+          </table>
         </div>
+      </div>
 
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">3.4</span>
+          <span class="step-t">Print Options — send before the file</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>Send a text message with options <em>before</em> sending the file. Options apply to the next print only, then reset to defaults (color, 1 copy).</p>
+          <table class="opts-table">
+            <thead><tr><th>Message</th><th>Effect</th></tr></thead>
+            <tbody>
+              <tr><td><code>bw</code> or <code>gray</code></td><td>Print in black &amp; white (<code>-o ColorModel=Gray</code>)</td></tr>
+              <tr><td><code>2x</code> / <code>3x</code> / <code>4x</code></td><td>Print 2, 3, or 4 copies (<code>-n N</code>)</td></tr>
+              <tr><td><code>bw 2x</code></td><td>Combine — B&amp;W + 2 copies</td></tr>
+              <tr><td>anything else</td><td>Bot replies: "Unknown option. Use: bw, 2x, 3x, bw 2x"</td></tr>
+            </tbody>
+          </table>
+          <div class="callout tip"><span class="callout-icon">💡</span><div>Bot confirms your options: <em>"⚙️ Next print: B&W, 2 copies"</em> — then send the file.</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════ -->
+  <!-- PHASE 4 -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">04</span>
+      <span class="section-title">Home Assistant — CUPS Monitoring</span>
+      <span class="section-sub">Sensors · Webhook · Automations · Dashboard</span>
+    </div>
+    <div class="divider"></div>
+
+    <!-- monitoring overview card -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px 22px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+      <div style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
+        <div style="font-size:22px;margin-bottom:4px;">🖨️</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">Printer State</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;">idle · printing · offline</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
+        <div style="font-size:22px;margin-bottom:4px;">📋</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">Job Count</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;">queued + active jobs</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
+        <div style="font-size:22px;margin-bottom:4px;">📊</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">Page Count</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;">total pages printed</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
+        <div style="font-size:22px;margin-bottom:4px;">🔔</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">Alerts</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px;">offline · job done · errors</div>
       </div>
     </div>
 
-    <!-- ══════════════════════════════════════ -->
-    <!-- PHASE 4 -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">04</span>
-        <span class="section-title">Home Assistant — CUPS Monitoring</span>
-        <span class="section-sub">Sensors · Webhook · Automations · Dashboard</span>
-      </div>
-      <div class="divider"></div>
+    <div class="steps">
 
-      <!-- monitoring overview card -->
-      <div
-        style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px 22px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
-        <div
-          style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
-          <div style="font-size:22px;margin-bottom:4px;">🖨️</div>
-          <div
-            style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">
-            Printer State</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:4px;">idle · printing · offline</div>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.1</span>
+          <span class="step-t">Enable PrintBot → HA webhook in .env</span>
+          <span class="step-arr">›</span>
         </div>
-        <div
-          style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
-          <div style="font-size:22px;margin-bottom:4px;">📋</div>
-          <div
-            style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">
-            Job Count</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:4px;">queued + active jobs</div>
-        </div>
-        <div
-          style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
-          <div style="font-size:22px;margin-bottom:4px;">📊</div>
-          <div
-            style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">
-            Page Count</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:4px;">total pages printed</div>
-        </div>
-        <div
-          style="text-align:center;padding:12px;background:var(--bg3);border-radius:6px;border:1px solid var(--border2);">
-          <div style="font-size:22px;margin-bottom:4px;">🔔</div>
-          <div
-            style="font-family:var(--mono);font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.08em;">
-            Alerts</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:4px;">offline · job done · errors</div>
-        </div>
-      </div>
-
-      <div class="steps">
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.1</span>
-            <span class="step-t">Enable PrintBot → HA webhook in .env</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Uncomment the HA lines in <code>.env</code>. PrintBot will POST <code>printbot_job_sent</code> to HA
-              after every successful print:</p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">.env</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>HA_URL=http://homeassistant:8123
+        <div class="step-body">
+          <p>Uncomment the HA lines in <code>.env</code>. PrintBot will POST <code>printbot_job_sent</code> to HA after every successful print:</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">.env</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>HA_URL=http://homeassistant:8123
 HA_TOKEN=your_long_lived_access_token</pre>
-            </div>
-            <p>Webhook payload sent by PrintBot:</p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">json — printbot_job_sent event data</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>{
+          </div>
+          <p>Webhook payload sent by PrintBot:</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">json — printbot_job_sent event data</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>{
   "file_name": "report.pdf",
   "chat_id":   123456789,
   "copies":    2,
   "color":     false
 }</pre>
-            </div>
-            <div class="callout ok"><span class="callout-icon">✅</span>
-              <div>HA being offline <strong>never breaks printing</strong> — webhook has a 3s timeout, all exceptions
-                are silently caught by PrintBot.</div>
-            </div>
           </div>
+          <div class="callout ok"><span class="callout-icon">✅</span><div>HA being offline <strong>never breaks printing</strong> — webhook has a 3s timeout, all exceptions are silently caught by PrintBot.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.2</span>
-            <span class="step-t">Start HA and create a Long-Lived Token</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>docker compose up -d homeassistant</pre>
-            </div>
-            <ul>
-              <li>Open <strong>http://[host-ip]:8123</strong> → complete onboarding</li>
-              <li>Profile → Long-Lived Access Tokens → <strong>Create Token</strong></li>
-              <li>Paste into <code>.env</code> as <code>HA_TOKEN</code>, then:
-                <code>docker compose restart printbot</code>
-              </li>
-            </ul>
-          </div>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.2</span>
+          <span class="step-t">Start HA and create a Long-Lived Token</span>
+          <span class="step-arr">›</span>
         </div>
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.3</span>
-            <span class="step-t">Configure Telegram notify in HA</span>
-            <span class="step-arr">›</span>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>docker compose up -d homeassistant</pre>
           </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/configuration.yaml</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>telegram_bot:
+          <ul>
+            <li>Open <strong>http://[host-ip]:8123</strong> → complete onboarding</li>
+            <li>Profile → Long-Lived Access Tokens → <strong>Create Token</strong></li>
+            <li>Paste into <code>.env</code> as <code>HA_TOKEN</code>, then: <code>docker compose restart printbot</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.3</span>
+          <span class="step-t">Configure Telegram notify in HA</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/configuration.yaml</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>telegram_bot:
   - platform: polling
     api_key: !secret telegram_token
     allowed_chat_ids:
@@ -1862,48 +1268,27 @@ notify:
   - name: telegram
     platform: telegram
     chat_id: !secret my_chat_id</pre>
-            </div>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/secrets.yaml</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>telegram_token: "123456789:ABCDEF..."
+          </div>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/secrets.yaml</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>telegram_token: "123456789:ABCDEF..."
 my_chat_id: 123456789</pre>
-            </div>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div>Reuse the <strong>same bot token</strong> as PrintBot — one bot handles printing (polling) and HA
-                alerts simultaneously without conflict.</div>
-            </div>
           </div>
+          <div class="callout tip"><span class="callout-icon">💡</span><div>Reuse the <strong>same bot token</strong> as PrintBot — one bot handles printing (polling) and HA alerts simultaneously without conflict.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.4</span>
-            <span class="step-t">CUPS Sensors — printer state, job count, page count</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Add all three sensors to <code>configuration.yaml</code>. They poll CUPS every 30–60 seconds via
-              <code>lpstat</code> and <code>lpinfo</code> inside the cups container.
-            </p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/configuration.yaml</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>command_line:
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.4</span>
+          <span class="step-t">CUPS Sensors — printer state, job count, page count</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>Add all three sensors to <code>configuration.yaml</code>. They poll CUPS every 30–60 seconds via <code>lpstat</code> and <code>lpinfo</code> inside the cups container.</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/configuration.yaml</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>command_line:
 
   <span class="cm"># ── Sensor 1: Printer State ────────────────────────────</span>
   <span class="cm"># Values: idle · printing · stopped · offline</span>
@@ -1961,34 +1346,22 @@ my_chat_id: 123456789</pre>
       payload_on: "scheduler is running"
       payload_off: "offline"
       device_class: connectivity</pre>
-            </div>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div><strong>Printer name:</strong> Replace <code>Canon-LBP7110cw</code> with the exact name you set in
-                CUPS Web UI. Verify with: <code>docker exec cups-server lpstat -p</code></div>
-            </div>
           </div>
+          <div class="callout tip"><span class="callout-icon">💡</span><div><strong>Printer name:</strong> Replace <code>Canon-LBP7110cw</code> with the exact name you set in CUPS Web UI. Verify with: <code>docker exec cups-server lpstat -p</code></div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.5</span>
-            <span class="step-t">CUPS REST API sensor — richer printer attributes</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>CUPS exposes a REST-like JSON endpoint. Use HA's <code>rest</code> sensor to pull printer attributes
-              including state reason and accepting status directly from the CUPS API.</p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/configuration.yaml (append)</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>rest:
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.5</span>
+          <span class="step-t">CUPS REST API sensor — richer printer attributes</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>CUPS exposes a REST-like JSON endpoint. Use HA's <code>rest</code> sensor to pull printer attributes including state reason and accepting status directly from the CUPS API.</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/configuration.yaml (append)</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>rest:
   <span class="cm"># Polls the CUPS IPP endpoint for rich printer attributes</span>
   - resource: "http://[host-ip]:631/printers/Canon-LBP7110cw"
     scan_interval: 60
@@ -2006,34 +1379,22 @@ my_chat_id: 123456789</pre>
         value_template: >
           {{ value_json.get('printer-is-accepting-jobs', false) }}
         icon: mdi:checkbox-marked-circle</pre>
-            </div>
-            <div class="callout warn"><span class="callout-icon">⚠️</span>
-              <div>The CUPS REST JSON response format varies by version. If this returns errors, use only the
-                <code>command_line</code> sensors from step 4.4 — they are more reliable.
-              </div>
-            </div>
           </div>
+          <div class="callout warn"><span class="callout-icon">⚠️</span><div>The CUPS REST JSON response format varies by version. If this returns errors, use only the <code>command_line</code> sensors from step 4.4 — they are more reliable.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.6</span>
-            <span class="step-t">Template sensors — derived state for dashboard</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Add helper template sensors for cleaner dashboard display and automation conditions:</p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/configuration.yaml (append)</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>template:
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.6</span>
+          <span class="step-t">Template sensors — derived state for dashboard</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>Add helper template sensors for cleaner dashboard display and automation conditions:</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/configuration.yaml (append)</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>template:
   - sensor:
       <span class="cm"># Human-readable printer status with emoji</span>
       - name: "Printer Status Display"
@@ -2066,28 +1427,20 @@ my_chat_id: 123456789</pre>
         state: >
           {{ states('sensor.printer_state') in ['offline', 'stopped'] }}
         device_class: problem</pre>
-            </div>
           </div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.7</span>
-            <span class="step-t">Automations — full set</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">ha/config/automations.yaml</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre><span class="cm"># ── 1. PrintBot job webhook → HA notification ──────────</span>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.7</span>
+          <span class="step-t">Automations — full set</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">ha/config/automations.yaml</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre><span class="cm"># ── 1. PrintBot job webhook → HA notification ──────────</span>
 - alias: "Print — Job Received"
   id: print_job_received
   trigger:
@@ -2182,29 +1535,21 @@ my_chat_id: 123456789</pre>
         message: >
           ⏳ Print queue has {{ states('sensor.print_jobs_queued') }} job(s)
           stuck for over 10 minutes. Check CUPS: http://[host-ip]:631</pre>
-            </div>
           </div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.8</span>
-            <span class="step-t">Lovelace Dashboard — full printer monitoring card</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <p>Dashboard → Edit → Add Card → Manual YAML. This creates a complete printer monitoring panel:</p>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">lovelace — printer panel</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre>type: vertical-stack
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.8</span>
+          <span class="step-t">Lovelace Dashboard — full printer monitoring card</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <p>Dashboard → Edit → Add Card → Manual YAML. This creates a complete printer monitoring panel:</p>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">lovelace — printer panel</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre>type: vertical-stack
 cards:
 
   <span class="cm"># ── Status header card ─────────────────────────────────</span>
@@ -2264,58 +1609,38 @@ cards:
     entities:
       - entity: sensor.print_jobs_queued
         name: Jobs Queued</pre>
-            </div>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div><strong>Gauge alternative:</strong> Swap the history-graph for a <code>type: gauge</code> card on
-                <code>sensor.print_jobs_queued</code> with <code>max: 10</code> for a visual queue indicator.
-              </div>
-            </div>
           </div>
+          <div class="callout tip"><span class="callout-icon">💡</span><div><strong>Gauge alternative:</strong> Swap the history-graph for a <code>type: gauge</code> card on <code>sensor.print_jobs_queued</code> with <code>max: 10</code> for a visual queue indicator.</div></div>
         </div>
+      </div>
 
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">4.9</span>
-            <span class="step-t">Reload HA config and verify sensors</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash — check config then reload</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre><span class="cm"># Validate config before reloading</span>
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">4.9</span>
+          <span class="step-t">Reload HA config and verify sensors</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash — check config then reload</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre><span class="cm"># Validate config before reloading</span>
 docker exec homeassistant python -m homeassistant --script check_config \
   --config /config
 
 <span class="cm"># Reload without full restart</span>
 docker exec homeassistant kill -HUP 1</pre>
-            </div>
-            <p>Then verify in HA:</p>
-            <ul>
-              <li>Developer Tools → States → search <code>sensor.printer</code> → all 4 sensors should appear</li>
-              <li><code>sensor.printer_state</code> should show <strong>idle</strong> if printer is on</li>
-              <li><code>binary_sensor.cups_online</code> should show <strong>on</strong></li>
-              <li>Send a test print from Telegram → check <code>sensor.print_jobs_queued</code> briefly shows 1</li>
-              <li>Check HA notifications — the <em>"🖨️ Print Job Sent"</em> notification should appear</li>
-            </ul>
-            <div class="code-block">
-              <div class="code-top">
-                <div class="code-dots"><span></span><span></span><span></span></div>
-                <div class="code-file">bash — manual sensor test</div><button class="copy-btn"
-                  onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>Copy</button>
-              </div>
-              <pre><span class="cm"># Test Sensor 1 — printer state</span>
+          </div>
+          <p>Then verify in HA:</p>
+          <ul>
+            <li>Developer Tools → States → search <code>sensor.printer</code> → all 4 sensors should appear</li>
+            <li><code>sensor.printer_state</code> should show <strong>idle</strong> if printer is on</li>
+            <li><code>binary_sensor.cups_online</code> should show <strong>on</strong></li>
+            <li>Send a test print from Telegram → check <code>sensor.print_jobs_queued</code> briefly shows 1</li>
+            <li>Check HA notifications — the <em>"🖨️ Print Job Sent"</em> notification should appear</li>
+          </ul>
+          <div class="code-block">
+            <div class="code-top"><div class="code-dots"><span></span><span></span><span></span></div><div class="code-file">bash — manual sensor test</div><button class="copy-btn" onclick="copyCode(this); event.stopPropagation();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button></div>
+            <pre><span class="cm"># Test Sensor 1 — printer state</span>
 docker exec cups-server lpstat -p Canon-LBP7110cw
 
 <span class="cm"># Test Sensor 2 — job count</span>
@@ -2326,391 +1651,272 @@ docker exec cups-server sh -c "wc -l < /var/log/cups/page_log 2>/dev/null"
 
 <span class="cm"># Test Sensor 4 — CUPS scheduler</span>
 docker exec cups-server lpstat -r</pre>
-            </div>
           </div>
         </div>
-
       </div>
+
     </div>
-
-    <!-- ══════════════════════════════════════ -->
-    <!-- PHASE 5 -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">05</span>
-        <span class="section-title">Connect Clients</span>
-        <span class="section-sub">Windows · iPhone · Android</span>
-      </div>
-      <div class="divider"></div>
-      <div class="steps">
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">5.1</span>
-            <span class="step-t">Windows — IPP, zero driver installation</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <ul>
-              <li>Settings → Bluetooth &amp; devices → Printers → <strong>Add device</strong></li>
-              <li>Click <strong>"The printer I want isn't listed"</strong></li>
-              <li>Select <strong>"Add printer using IP address or hostname"</strong></li>
-              <li>Protocol: <strong>IPP</strong> · Address: <code>http://[host-ip]:631/printers/Canon-LBP7110cw</code>
-              </li>
-              <li>Windows installs a generic driver automatically — no admin rights required</li>
-            </ul>
-            <div class="callout warn"><span class="callout-icon">⚠️</span>
-              <div>If connection fails, open port 631: <code>sudo ufw allow 631</code> on the host.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">5.2</span>
-            <span class="step-t">iPhone / iPad — AirPrint auto-discovery</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <ul>
-              <li>Must be on the <strong>same Wi-Fi</strong> as the CUPS host</li>
-              <li>Any app → Share → Print → Canon printer appears automatically</li>
-              <li>Powered by CUPS + Avahi mDNS — zero config needed</li>
-            </ul>
-            <div class="callout tip"><span class="callout-icon">💡</span>
-              <div><strong>Not appearing?</strong> CUPS must use <code>network_mode: host</code>. mDNS multicast doesn't
-                cross Docker bridge networks. Run <code>docker exec cups-server avahi-browse -t _ipp._tcp</code> to
-                verify.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="step" onclick="toggle(this, event)">
-          <div class="step-head">
-            <span class="step-n">5.3</span>
-            <span class="step-t">Android — Mopria Print Service</span>
-            <span class="step-arr">›</span>
-          </div>
-          <div class="step-body">
-            <ul>
-              <li>Install <strong>Mopria Print Service</strong> (Play Store, free)</li>
-              <li>Settings → Connected Devices → Printing → Mopria → auto-discovers CUPS</li>
-              <li>Or use <strong>Canon PRINT</strong> app → add printer by IP <code>192.168.1.50</code></li>
-            </ul>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ══════════════════════════════════════ -->
-    <!-- TROUBLESHOOT -->
-    <!-- ══════════════════════════════════════ -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">06</span>
-        <span class="section-title">Troubleshooting</span>
-        <span class="section-sub">Common Issues</span>
-      </div>
-      <div class="divider"></div>
-      <div class="trouble-grid">
-        <div class="ti">
-          <div class="tq">Bot says "lp not found"</div>
-          <div class="ta">The GHCR image includes <code>cups-bsd</code>. If using a custom build, add it to the
-            Dockerfile. Verify: <code>docker exec printbot which lp</code></div>
-        </div>
-        <div class="ti">
-          <div class="tq">printbot can't reach CUPS socket</div>
-          <div class="ta">Check <code>ls /var/run/cups/cups.sock</code> exists on host. CUPS must start before printbot
-            — use <code>depends_on: cups</code> in compose.</div>
-        </div>
-        <div class="ti">
-          <div class="tq">AirPrint invisible on iPhone</div>
-          <div class="ta">CUPS must use <code>network_mode: host</code>. mDNS multicast won't cross Docker's bridge
-            network.</div>
-        </div>
-        <div class="ti">
-          <div class="tq">Windows IPP "can't connect"</div>
-          <div class="ta">Open firewall: <code>sudo ufw allow 631</code>. Confirm CUPS is running:
-            <code>docker ps | grep cups</code>.
-          </div>
-        </div>
-        <div class="ti">
-          <div class="tq">/status shows no printers</div>
-          <div class="ta">Re-add printer at <code>:631/admin</code>. Check <code>./cups/config/printers.conf</code> is
-            persisted in the volume.</div>
-        </div>
-        <div class="ti">
-          <div class="tq">HA webhook not firing</div>
-          <div class="ta">Ensure both <code>HA_URL</code> and <code>HA_TOKEN</code> are set and uncommented in
-            <code>.env</code>. Restart printbot after editing.
-          </div>
-        </div>
-        <div class="ti">
-          <div class="tq">Print queued but nothing prints</div>
-          <div class="ta">Test: <code>docker exec cups-server ping 192.168.1.50</code>. Check printer isn't paused in
-            CUPS Web UI under Printers.</div>
-        </div>
-        <div class="ti">
-          <div class="tq">HA sensors show "unknown"</div>
-          <div class="ta">Mount the Docker socket into HA so it can run <code>docker exec</code>. Add
-            <code>- /var/run/docker.sock:/var/run/docker.sock</code> to the homeassistant volumes in compose, then
-            restart.
-          </div>
-        </div>
-        <div class="ti">
-          <div class="tq">sensor.total_pages_printed always 0</div>
-          <div class="ta">Enable page logging in CUPS:
-            <code>docker exec cups-server sh -c "echo 'PageLog /var/log/cups/page_log' >> /etc/cups/cupsd.conf"</code>
-            then restart CUPS.
-          </div>
-        </div>
-        <div class="ti">
-          <div class="tq">arm64 / Raspberry Pi image error</div>
-          <div class="ta">Use <code>ghcr.io/zr0aces/printbot:1.0.0</code> — it's multi-arch. Don't build locally unless
-            needed; the GHCR image is pre-built for arm64.</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SUMMARY TABLE -->
-    <div class="section">
-      <div class="section-label">
-        <span class="section-num">✓</span>
-        <span class="section-title">Full Feature Summary</span>
-      </div>
-      <div class="divider"></div>
-      <table class="summary-table">
-        <thead>
-          <tr>
-            <th>Feature</th>
-            <th>Mechanism</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>iPhone / iPad AirPrint</td>
-            <td>CUPS + Avahi mDNS — zero config</td>
-            <td><span class="badge done">✓ Auto</span></td>
-          </tr>
-          <tr>
-            <td>Android Mopria printing</td>
-            <td>IPP auto-discovery on LAN</td>
-            <td><span class="badge done">✓ Auto</span></td>
-          </tr>
-          <tr>
-            <td>Windows — no driver needed</td>
-            <td>IPP port 631, Windows generic driver</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>Telegram — print PDF / photo</td>
-            <td>PrintBot → lp → cups.sock</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>Telegram — B&amp;W / copies options</td>
-            <td>bw · 2x · 3x · 4x · bw 2x prefix</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>Telegram — /status</td>
-            <td>lpstat -p inside container</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>Telegram — /jobs queue</td>
-            <td>lpstat -o inside container</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>Telegram — /cancel all jobs</td>
-            <td>cancel -a inside container</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>Auto file cleanup after print</td>
-            <td>os.remove() after successful lp</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>Detailed error messages</td>
-            <td>lp stderr surfaced to Telegram</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>HA webhook — job event</td>
-            <td>printbot_job_sent via urllib → HA event bus</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>HA — printer state sensor</td>
-            <td>command_line lpstat → idle/printing/stopped/offline</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — job count sensor</td>
-            <td>command_line lpstat -o → live queue count</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — page count sensor</td>
-            <td>command_line wc page_log → total pages printed</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — CUPS online binary sensor</td>
-            <td>lpstat -r → scheduler running check</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — printer needs attention</td>
-            <td>Template binary sensor → problem device class</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — offline alert (debounced)</td>
-            <td>State automation 2 min → Telegram</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — printer back online alert</td>
-            <td>State transition offline→idle → Telegram</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — stuck queue alert</td>
-            <td>Numeric state > 0 for 10 min → Telegram</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — daily summary at 9pm</td>
-            <td>Time trigger → Telegram report</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>HA — full monitoring dashboard</td>
-            <td>Vertical stack: status + sensors + buttons + graph</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>CUPS — Canon CAPT driver</td>
-            <td>32-bit .deb, separate ccpd daemon, x86 hosts</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>CUPS — Canon UFR II LT driver</td>
-            <td>Native arm64/amd64, better color, no daemon</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>Driver selector tab UI</td>
-            <td>Interactive Dockerfile switcher in step 2.1</td>
-            <td><span class="badge done">✓ Works</span></td>
-          </tr>
-          <tr>
-            <td>Multi-arch Docker image</td>
-            <td>GHCR amd64 + arm64 pre-built</td>
-            <td><span class="badge new">★ v1.0.0</span></td>
-          </tr>
-          <tr>
-            <td>Voice trigger (Alexa/Google)</td>
-            <td>HA script → shell_command → lp</td>
-            <td><span class="badge opt">◦ Optional</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="footer">
-      <span>Smart Print Server Guide · v3 · April 2026</span>
-      <span><a href="https://github.com/zr0aces/PrintBot" target="_blank">github.com/zr0aces/PrintBot</a> · Canon
-        LBP7110cw + CUPS + HA</span>
-    </div>
-
   </div>
 
-  <script>
-    function toggle(el, event) {
-      // Only handle clicks that target the head or the container itself
-      // If the target is within the body (like a code block or button), ignore it
-      const head = el.querySelector('.step-head, .cl-head');
-      const body = el.querySelector('.step-body, .cl-body');
+  <!-- ══════════════════════════════════════ -->
+  <!-- PHASE 5 -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">05</span>
+      <span class="section-title">Connect Clients</span>
+      <span class="section-sub">Windows · iPhone · Android</span>
+    </div>
+    <div class="divider"></div>
+    <div class="steps">
 
-      if (body && body.contains(event.target)) {
-        // If we click something interactive in the body, don't toggle
-        return;
-      }
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">5.1</span>
+          <span class="step-t">Windows — IPP, zero driver installation</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <ul>
+            <li>Settings → Bluetooth &amp; devices → Printers → <strong>Add device</strong></li>
+            <li>Click <strong>"The printer I want isn't listed"</strong></li>
+            <li>Select <strong>"Add printer using IP address or hostname"</strong></li>
+            <li>Protocol: <strong>IPP</strong> · Address: <code>http://[host-ip]:631/printers/Canon-LBP7110cw</code></li>
+            <li>Windows installs a generic driver automatically — no admin rights required</li>
+          </ul>
+          <div class="callout warn"><span class="callout-icon">⚠️</span><div>If connection fails, open port 631: <code>sudo ufw allow 631</code> on the host.</div></div>
+        </div>
+      </div>
 
-      el.classList.toggle('open');
-    }
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">5.2</span>
+          <span class="step-t">iPhone / iPad — AirPrint auto-discovery</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <ul>
+            <li>Must be on the <strong>same Wi-Fi</strong> as the CUPS host</li>
+            <li>Any app → Share → Print → Canon printer appears automatically</li>
+            <li>Powered by CUPS + Avahi mDNS — zero config needed</li>
+          </ul>
+          <div class="callout tip"><span class="callout-icon">💡</span><div><strong>Not appearing?</strong> CUPS must use <code>network_mode: host</code>. mDNS multicast doesn't cross Docker bridge networks. Run <code>docker exec cups-server avahi-browse -t _ipp._tcp</code> to verify.</div></div>
+        </div>
+      </div>
 
-    function copyCode(btn) {
-      // Walk up to .code-block, then grab the <pre> text
-      const block = btn.closest('.code-block');
-      const pre = block ? block.querySelector('pre') : null;
-      if (!pre) return;
-      // Strip HTML tags to get plain text
-      const text = pre.innerHTML
-        .replace(/<span[^>]*>/g, '')
-        .replace(/<\/span>/g, '')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .trim();
-      navigator.clipboard.writeText(text).then(() => {
-        btn.classList.add('copied');
-        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="20 6 9 17 4 12"/>
-    </svg>Copied!`;
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="9" y="9" width="13" height="13" rx="2"/>
-        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-      </svg>Copy`;
-    }, 2000);
-  }).catch(() => {
-    // Fallback for browsers that block clipboard
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
-  });
+      <div class="step">
+        <div class="step-head" onclick="toggle(this.closest('.step'))">
+          <span class="step-n">5.3</span>
+          <span class="step-t">Android — Mopria Print Service</span>
+          <span class="step-arr">›</span>
+        </div>
+        <div class="step-body">
+          <ul>
+            <li>Install <strong>Mopria Print Service</strong> (Play Store, free)</li>
+            <li>Settings → Connected Devices → Printing → Mopria → auto-discovers CUPS</li>
+            <li>Or use <strong>Canon PRINT</strong> app → add printer by IP <code>192.168.1.50</code></li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════ -->
+  <!-- TROUBLESHOOT -->
+  <!-- ══════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">06</span>
+      <span class="section-title">Troubleshooting</span>
+      <span class="section-sub">Common Issues</span>
+    </div>
+    <div class="divider"></div>
+    <div class="trouble-grid">
+      <div class="ti">
+        <div class="tq">Bot says "lp not found"</div>
+        <div class="ta">The GHCR image includes <code>cups-bsd</code>. If using a custom build, add it to the Dockerfile. Verify: <code>docker exec printbot which lp</code></div>
+      </div>
+      <div class="ti">
+        <div class="tq">printbot can't reach CUPS socket</div>
+        <div class="ta">Check <code>ls /var/run/cups/cups.sock</code> exists on host. CUPS must start before printbot — use <code>depends_on: cups</code> in compose.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">AirPrint invisible on iPhone</div>
+        <div class="ta">CUPS must use <code>network_mode: host</code>. mDNS multicast won't cross Docker's bridge network.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">Windows IPP "can't connect"</div>
+        <div class="ta">Open firewall: <code>sudo ufw allow 631</code>. Confirm CUPS is running: <code>docker ps | grep cups</code>.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">/status shows no printers</div>
+        <div class="ta">Re-add printer at <code>:631/admin</code>. Check <code>./cups/config/printers.conf</code> is persisted in the volume.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">HA webhook not firing</div>
+        <div class="ta">Ensure both <code>HA_URL</code> and <code>HA_TOKEN</code> are set and uncommented in <code>.env</code>. Restart printbot after editing.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">Print queued but nothing prints</div>
+        <div class="ta">Test: <code>docker exec cups-server ping 192.168.1.50</code>. Check printer isn't paused in CUPS Web UI under Printers.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">HA sensors show "unknown"</div>
+        <div class="ta">Mount the Docker socket into HA so it can run <code>docker exec</code>. Add <code>- /var/run/docker.sock:/var/run/docker.sock</code> to the homeassistant volumes in compose, then restart.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">sensor.total_pages_printed always 0</div>
+        <div class="ta">Enable page logging in CUPS: <code>docker exec cups-server sh -c "echo 'PageLog /var/log/cups/page_log' >> /etc/cups/cupsd.conf"</code> then restart CUPS.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">cupsctl: Unable to connect to server</div>
+        <div class="ta"><code>cupsctl</code> requires a running CUPS daemon — it cannot run during <code>docker build</code>. The fix is to configure <code>cupsd.conf</code> with <code>sed</code> and <code>echo</code> only. Both Dockerfiles in step 2.1 are already corrected.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">canonLBP: command not found</div>
+        <div class="ta">The <code>canonLBP setup</code> call was removed — UFR II LT PPDs register automatically when the <code>.deb</code> installs. No manual PPD registration step is needed.</div>
+      </div>
+      <div class="ti">
+        <div class="tq">arm64 / Raspberry Pi image error</div>
+        <div class="ta">Use <code>ghcr.io/zr0aces/printbot:1.0.0</code> — it's multi-arch. Don't build locally unless needed; the GHCR image is pre-built for arm64.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUMMARY TABLE -->
+  <div class="section">
+    <div class="section-label">
+      <span class="section-num">✓</span>
+      <span class="section-title">Full Feature Summary</span>
+    </div>
+    <div class="divider"></div>
+    <table class="summary-table">
+      <thead>
+        <tr><th>Feature</th><th>Mechanism</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>iPhone / iPad AirPrint</td><td>CUPS + Avahi mDNS — zero config</td><td><span class="badge done">✓ Auto</span></td></tr>
+        <tr><td>Android Mopria printing</td><td>IPP auto-discovery on LAN</td><td><span class="badge done">✓ Auto</span></td></tr>
+        <tr><td>Windows — no driver needed</td><td>IPP port 631, Windows generic driver</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>Telegram — print PDF / photo</td><td>PrintBot → lp → cups.sock</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>Telegram — B&amp;W / copies options</td><td>bw · 2x · 3x · 4x · bw 2x prefix</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>Telegram — /status</td><td>lpstat -p inside container</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>Telegram — /jobs queue</td><td>lpstat -o inside container</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>Telegram — /cancel all jobs</td><td>cancel -a inside container</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>Auto file cleanup after print</td><td>os.remove() after successful lp</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>Detailed error messages</td><td>lp stderr surfaced to Telegram</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>HA webhook — job event</td><td>printbot_job_sent via urllib → HA event bus</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>HA — printer state sensor</td><td>command_line lpstat → idle/printing/stopped/offline</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — job count sensor</td><td>command_line lpstat -o → live queue count</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — page count sensor</td><td>command_line wc page_log → total pages printed</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — CUPS online binary sensor</td><td>lpstat -r → scheduler running check</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — printer needs attention</td><td>Template binary sensor → problem device class</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — offline alert (debounced)</td><td>State automation 2 min → Telegram</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — printer back online alert</td><td>State transition offline→idle → Telegram</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — stuck queue alert</td><td>Numeric state > 0 for 10 min → Telegram</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — daily summary at 9pm</td><td>Time trigger → Telegram report</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>HA — full monitoring dashboard</td><td>Vertical stack: status + sensors + buttons + graph</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>CUPS — Canon CAPT driver</td><td>32-bit .deb, separate ccpd daemon, x86 hosts</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>CUPS — Canon UFR II LT driver</td><td>Native arm64/amd64, better color, no daemon</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>Driver selector tab UI</td><td>Interactive Dockerfile switcher in step 2.1</td><td><span class="badge done">✓ Works</span></td></tr>
+        <tr><td>Multi-arch Docker image</td><td>GHCR amd64 + arm64 pre-built</td><td><span class="badge new">★ v1.0.0</span></td></tr>
+        <tr><td>Voice trigger (Alexa/Google)</td><td>HA script → shell_command → lp</td><td><span class="badge opt">◦ Optional</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>Smart Print Server Guide · v3 · April 2026</span>
+    <span><a href="https://github.com/zr0aces/PrintBot" target="_blank">github.com/zr0aces/PrintBot</a> · Canon LBP7110cw + CUPS + HA</span>
+  </div>
+
+</div>
+
+<script>
+function toggleChangelog() {
+  document.getElementById('cl-accordion').classList.toggle('open');
+}
+
+function toggle(el) {
+  el.classList.toggle('open');
+}
+
+function copyCode(btn) {
+  var block = btn.closest('.code-block');
+  var pre = block ? block.querySelector('pre') : null;
+  if (!pre) return;
+
+  var text = pre.innerHTML
+    .replace(/<span[^>]*>/g, '')
+    .replace(/<\/span>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+
+  var svgCopy = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy';
+  var svgDone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Copied!';
+
+  function resetBtn() {
+    btn.classList.remove('copied');
+    btn.innerHTML = svgCopy;
+  }
+
+  function markCopied() {
+    btn.classList.add('copied');
+    btn.innerHTML = svgDone;
+    setTimeout(resetBtn, 2000);
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(markCopied).catch(function() {
+      fallbackCopy(text);
+      markCopied();
+    });
+  } else {
+    fallbackCopy(text);
+    markCopied();
+  }
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '0';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
 }
 
 function showDriver(which) {
-  const capt = document.getElementById('driver-capt');
-  const ufr2 = document.getElementById('driver-ufr2');
-  const tabCapt = document.getElementById('tab-capt');
-  const tabUfr2 = document.getElementById('tab-ufr2');
+  var capt    = document.getElementById('driver-capt');
+  var ufr2    = document.getElementById('driver-ufr2');
+  var tabCapt = document.getElementById('tab-capt');
+  var tabUfr2 = document.getElementById('tab-ufr2');
   if (which === 'capt') {
     capt.style.display = 'block';
     ufr2.style.display = 'none';
     tabCapt.style.background = 'var(--orangebg2)';
-    tabCapt.style.color = 'var(--orange)';
+    tabCapt.style.color      = 'var(--orange)';
     tabUfr2.style.background = 'var(--bg3)';
-    tabUfr2.style.color = 'var(--text3)';
+    tabUfr2.style.color      = 'var(--text3)';
   } else {
     capt.style.display = 'none';
     ufr2.style.display = 'block';
     tabUfr2.style.background = 'var(--orangebg2)';
-    tabUfr2.style.color = 'var(--orange)';
+    tabUfr2.style.color      = 'var(--orange)';
     tabCapt.style.background = 'var(--bg3)';
-    tabCapt.style.color = 'var(--text3)';
+    tabCapt.style.color      = 'var(--text3)';
   }
 }
-  </script>
+</script>
 </body>
-
 </html>
