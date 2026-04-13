@@ -25,6 +25,18 @@ print_options = {}
 # Maximum characters of stderr to include in error replies
 MAX_STDERR_LENGTH = 120
 
+def get_cups_args():
+    """Build common arguments for CUPS commands based on environment variables."""
+    args = []
+    server = os.getenv("CUPS_SERVER")
+    if server:
+        args += ["-h", server]
+    return args
+
+def get_printer_name():
+    """Get the target printer name from environment variables."""
+    return os.getenv("PRINTER_NAME")
+
 HELP_TEXT = (
     "📠 *PrintBot Commands*\n\n"
     "/start — Show the welcome message\n"
@@ -91,17 +103,22 @@ async def status(update, context):
         return
 
     try:
+        cmd = [lpstat] + get_cups_args() + ["-p"]
         result = subprocess.run(
-            [lpstat, "-p"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            msg = f"🟢 Printer is available:\n```\n{result.stdout.strip()}\n```"
+        if result.returncode == 0:
+            if result.stdout.strip():
+                msg = f"🟢 Printer is available:\n```\n{result.stdout.strip()}\n```"
+            else:
+                msg = "🟡 No printers are currently registered on the server."
         else:
-            msg = "🔴 No printers are currently available. Check CUPS configuration."
+            stderr = result.stderr.strip()[:MAX_STDERR_LENGTH]
+            msg = f"🔴 Could not reach printer server:\n`{stderr or 'Unknown error'}`"
     except subprocess.TimeoutExpired:
         msg = "⚠️ Printer status check timed out."
 
@@ -140,17 +157,22 @@ async def jobs_command(update, context):
         return
 
     try:
+        cmd = [lpstat] + get_cups_args() + ["-o"]
         result = subprocess.run(
-            [lpstat, "-o"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            msg = f"🖨️ Print queue:\n```\n{result.stdout.strip()}\n```"
+        if result.returncode == 0:
+            if result.stdout.strip():
+                msg = f"🖨️ Print queue:\n```\n{result.stdout.strip()}\n```"
+            else:
+                msg = "📭 No jobs in queue"
         else:
-            msg = "📭 No jobs in queue"
+            stderr = result.stderr.strip()[:MAX_STDERR_LENGTH]
+            msg = f"⚠️ Could not fetch queue: `{stderr or 'Unknown error'}`"
     except subprocess.TimeoutExpired:
         msg = "⚠️ Print queue check timed out."
 
@@ -172,8 +194,9 @@ async def cancel_command(update, context):
         return
 
     try:
+        cmd = [cancel_bin] + get_cups_args() + ["-a"]
         result = subprocess.run(
-            [cancel_bin, "-a"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=5,
@@ -290,7 +313,12 @@ def print_file(file_path, color=True, copies=1):
     lp = shutil.which("lp")
     if not lp:
         raise RuntimeError("lp command not found — is cups-client installed?")
-    cmd = [lp, "-o", "fit-to-page", "-o", "media=A4"]
+    cmd = [lp] + get_cups_args() + ["-o", "fit-to-page", "-o", "media=A4"]
+    
+    printer = get_printer_name()
+    if printer:
+        cmd += ["-d", printer]
+
     if not color:
         cmd += ["-o", "ColorModel=Gray"]
     if copies > 1:

@@ -7,9 +7,7 @@ services:
     image: ghcr.io/zr0aces/printbot:1.0.0
     container_name: printbot
     restart: always
-    devices:
-      - /dev/usb/lp0:/dev/usb/lp0
-    volumes:
-      - /var/run/cups/cups.sock:/var/run/cups/cups.sock
+    environment:
+      - CUPS_SERVER=cups
     env_file:
       - .env
