@@ -317,7 +317,7 @@ async def print_file(file_path, color=True, copies=1):
     if copies > 1:
         cmd += ["-n", str(copies)]
     cmd.append(file_path)
-    logger.info("Printing %s", file_path)
+    logger.info("Printing %s to printer: %s (copies=%s, color=%s)", file_path, printer or "DEFAULT", copies, color)
     logger.debug("Command: %s", cmd)
     
     process = await asyncio.create_subprocess_exec(
@@ -465,7 +465,9 @@ def main():
         )
     )
 
-    logger.info("PrintBot v%s starting with allowed chat IDs: %s", VERSION, allowed_chat_ids or "ALL")
+    logger.info("PrintBot v%s starting...", VERSION)
+    logger.info("Configuration: CUPS_SERVER=%s, PRINTER_NAME=%s", os.getenv("CUPS_SERVER", "localhost"), os.getenv("PRINTER_NAME", "DEFAULT"))
+    logger.info("Allowed chat IDs: %s", allowed_chat_ids or "ALL")
     application.run_polling()
 
 
