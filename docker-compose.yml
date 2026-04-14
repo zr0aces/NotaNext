@@ -10,6 +10,7 @@ services:
     environment:
       - CUPS_SERVER=cups
       - PRINTER_NAME=Canon_LBP7110Cw
+      - TZ=Asia/Bangkok
     env_file:
       - .env
     deploy:
