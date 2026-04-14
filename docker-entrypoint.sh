@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure the CUPS configuration directory exists
+mkdir -p /etc/cups
+
 # Configure CUPS client to point to the correct server
 if [ -n "$CUPS_SERVER" ]; then
     echo "Configuring CUPS client to use server: $CUPS_SERVER"
