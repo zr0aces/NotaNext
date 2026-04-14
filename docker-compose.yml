@@ -9,6 +9,7 @@ services:
     restart: always
     environment:
       - CUPS_SERVER=cups
+      - PRINTER_NAME=${PRINTER_NAME:-Canon_LBP7110Cw}
     env_file:
       - .env
     deploy:
