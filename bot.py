@@ -10,8 +10,11 @@ from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 
+# Set log level from environment variable
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
+    level=getattr(logging, log_level, logging.INFO)
 )
 
 logger = logging.getLogger("printbot")
@@ -295,43 +298,61 @@ async def print_msg(update, context):
         )
     except Exception as e:
         logger.error("Print failed: %s", e)
+        # Include the command in the error message for easier debugging
+        msg = f"❌ Print failed: {e}\n\n`{getattr(e, 'cmd', 'Unknown command')}`"
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"❌ Print failed: {e}",
+            text=msg,
+            parse_mode="Markdown",
         )
 
 
 async def print_file(file_path, color=True, copies=1):
-    """Send a file to the printer using lp."""
+    """Send a file to the printer using lp.
+
+    Always passes -h <CUPS_SERVER> and -d <PRINTER_NAME> explicitly.
+    Both environment variables are required for correct operation.
+    """
     lp = shutil.which("lp")
     if not lp:
         raise RuntimeError("lp command not found — is cups-client installed?")
-    cmd = [lp] + get_cups_args() + ["-o", "fit-to-page", "-o", "media=A4"]
-    
-    printer = get_printer_name()
-    if printer:
-        cmd += ["-d", printer]
+
+    server = os.getenv("CUPS_SERVER")
+    printer = os.getenv("PRINTER_NAME")
+
+    if not server:
+        raise RuntimeError("CUPS_SERVER environment variable is not set")
+    if not printer:
+        raise RuntimeError("PRINTER_NAME environment variable is not set")
+
+    # Build command: lp -h <server> -d <printer> [options] <file>
+    cmd = [lp, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", "media=A4"]
 
     if not color:
         cmd += ["-o", "ColorModel=Gray"]
     if copies > 1:
         cmd += ["-n", str(copies)]
     cmd.append(file_path)
-    logger.info("Printing %s to printer: %s (copies=%s, color=%s)", file_path, printer or "DEFAULT", copies, color)
-    logger.debug("Command: %s", cmd)
-    
+
+    # Always log the exact shell command at INFO level for easy debugging
+    logger.info("Shell command: %s", " ".join(cmd))
+
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await process.communicate()
-    
+
     if process.returncode != 0:
         err_str = stderr.decode().strip()[:MAX_STDERR_LENGTH]
-        logger.error("lp stderr: %s", stderr.decode())
-        raise RuntimeError(err_str or "Print command failed")
-    logger.info("lp stdout: %s", stdout.decode())
+        logger.error("lp failed (returncode=%s) stderr: %s", process.returncode, stderr.decode())
+        ex = RuntimeError(err_str or "Print command failed")
+        ex.cmd = " ".join(cmd)
+        raise ex
+
+    logger.info("lp stdout: %s", stdout.decode().strip())
+    return " ".join(cmd)
 
 
 def notify_homeassistant(file_name, chat_id, copies, color):
