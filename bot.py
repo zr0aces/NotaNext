@@ -109,12 +109,13 @@ def get_allowed_chat_ids() -> list[int]:
 
 
 def get_print_options(chat_id: int) -> dict:
-    """Return print options for a chat, respecting the TTL.
+    """Return print options for a chat, respecting the TTL and extending it on use.
 
     Returns defaults if no options are set or the options have expired.
     """
     entry = print_options.get(chat_id)
     if entry and (time.monotonic() - entry.get("ts", 0)) < PRINT_OPTIONS_TTL:
+        entry["ts"] = time.monotonic()  # Extend the session
         return entry
     return {"color": True, "copies": 1, "media": "A4", "number_up": 1}
 
@@ -461,7 +462,8 @@ async def print_file(file_path: str, color: bool = True, copies: int = 1, media:
     if number_up > 1:
         cmd += ["-o", f"number-up={number_up}"]
     if not color:
-        cmd += ["-o", "ColorModel=Gray"]
+        # ColorModel=Gray is standard CUPS; CNColorMode=mono is Canon UFRII specific
+        cmd += ["-o", "ColorModel=Gray", "-o", "CNColorMode=mono"]
     if copies > 1:
         cmd += ["-n", str(copies)]
     cmd.append(file_path)
