@@ -10,5 +10,17 @@ ExecStart=/usr/bin/python3 bot.py
 Restart=on-failure
 RestartSec=10
 
+# ── Security hardening ───────────────────────────────────────────────────────
+# Prevent the process from gaining new privileges via setuid/capabilities
+NoNewPrivileges=yes
+# Give the service its own private /tmp (isolated from host)
+PrivateTmp=yes
+# Make the OS filesystem read-only except for explicitly listed paths
+ProtectSystem=strict
+# Allow writing only to the data directory for downloaded print files
+ReadWritePaths=/home/pi/printbot/data
+# Restrict access to home directories of other users
+ProtectHome=read-only
+
 [Install]
 WantedBy=multi-user.target

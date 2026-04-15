@@ -54,6 +54,7 @@ Copy the example env file and fill in your values:
 
 ```bash
 cp .env.example .env
+chmod 600 .env   # restrict read access — .env contains your Telegram token
 ```
 
 | Variable | Required | Description |
@@ -162,7 +163,7 @@ docker pull ghcr.io/zr0aces/printbot:latest
 Pin to a specific version:
 
 ```bash
-docker pull ghcr.io/zr0aces/printbot:1.0.5
+docker pull ghcr.io/zr0aces/printbot:1.0.6
 ```
 
 Track minor-version patch updates:
@@ -181,8 +182,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes.
 |-----------|---------|
 | Python | 3.12 |
 | [python-telegram-bot](https://python-telegram-bot.org/) | 22.7 |
+| [httpx](https://www.python-httpx.org/) | transitive dep (async HTTP) |
 | CUPS client (`lp` / `lpstat` / `cancel`) | System package |
 | Docker base image | `ubuntu:22.04` |
+
+> **Supply-chain hardening:** To pin `requirements.txt` with SHA-256 hashes, run
+> `pip install pip-tools && pip-compile --generate-hashes requirements.txt`
+> and commit the resulting `requirements.txt` lockfile.
 
 ---
 

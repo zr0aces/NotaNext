@@ -1,9 +1,12 @@
 services:
   printbot:
+    # Use the pre-built image from GitHub Container Registry (no local build needed).
+    # Run `docker compose up -d --build` to build locally instead.
+    image: ghcr.io/zr0aces/printbot:1.0.6
     build:
       context: .
       args:
-        VERSION: "1.0.5"
+        VERSION: "1.0.6"
     container_name: printbot
     restart: always
     environment:
@@ -20,3 +23,9 @@ services:
         reservations:
           cpus: '0.10'
           memory: 128M
+    # Prevent unbounded log growth on long-running hosts (e.g. Raspberry Pi SD card)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
