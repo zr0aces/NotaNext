@@ -163,7 +163,7 @@ docker pull ghcr.io/zr0aces/printbot:latest
 Pin to a specific version:
 
 ```bash
-docker pull ghcr.io/zr0aces/printbot:1.0.6
+docker pull ghcr.io/zr0aces/printbot:1.0.7
 ```
 
 Track minor-version patch updates:
