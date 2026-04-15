@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] – 2026-04-15
+
+### Fixed
+- **`asyncio.get_event_loop()` deprecation**: `perform_cleanup_async()` now uses `asyncio.get_running_loop()` (introduced in Python 3.7, preferred from 3.10+), eliminating the `DeprecationWarning` emitted by newer Python runtimes when `get_event_loop()` is called with no running loop.
+
+### Improved
+- **Configurable Docker image via environment variable**: `docker-compose.yml` now reads the image name from the `DOCKER_IMAGE` env var (default: `ghcr.io/zr0aces/printbot:1.0.7`). This makes it easy to switch between registry, local, and custom builds without editing the Compose file. Set `DOCKER_IMAGE=local/printbot:dev` in `.env` to use a locally built image.
+
+---
+
 ## [1.0.6] – 2026-04-15
 
 ### Fixed — Bugs

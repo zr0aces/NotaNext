@@ -36,7 +36,7 @@ logger = logging.getLogger("printbot")
 # Constants
 # ---------------------------------------------------------------------------
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 DATA_DIR = "data"
 
 # Maximum characters of stderr to include in error replies
@@ -586,7 +586,7 @@ def perform_cleanup() -> int:
 
 async def perform_cleanup_async() -> int:
     """Async wrapper for perform_cleanup — offloads blocking I/O to a thread pool."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, perform_cleanup)
 
 
