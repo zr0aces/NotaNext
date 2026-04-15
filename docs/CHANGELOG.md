@@ -56,8 +56,6 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.5] – 2026-04-15
 
-
-
 ### Changed
 - Bumped `VERSION` constant in `bot.py` to `1.0.5`
 - Updated `docker-compose.yml` build arg to `1.0.5`

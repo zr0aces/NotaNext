@@ -156,25 +156,15 @@ Options apply to all subsequent files for the **next 30 minutes**. They reset to
 
 Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PrintBot/pkgs/container/printbot) when a version tag is pushed. Multi-arch images are built for **linux/amd64** and **linux/arm64** (Raspberry Pi).
 
-Pull the latest release:
-
 ```bash
+# Pull the latest release
 docker pull ghcr.io/zr0aces/printbot:latest
+
+# Pin to a specific version
+docker pull ghcr.io/zr0aces/printbot:1.0.8
 ```
 
-Pin to a specific version:
-
-```bash
-docker pull ghcr.io/zr0aces/printbot:1.0.7
-```
-
-Track minor-version patch updates:
-
-```bash
-docker pull ghcr.io/zr0aces/printbot:1.0
-```
-
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes.
 
 ---
 
