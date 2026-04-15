@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] – 2026-04-15
+
+### Added
+- Added support for A5 printing (`a5` option) and printing A5 content on A4 paper (`half` option).
+- Print settings (color, copies, paper size) now persist for 30 minutes instead of resetting after the first print.
+- Added `a4` option to explicitly reset paper size to A4.
+
+---
+
 ## [1.0.7] – 2026-04-15
 
 ### Fixed

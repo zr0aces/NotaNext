@@ -144,9 +144,11 @@ Before sending a file, text the bot with one or more options for the **next** pr
 |--------|--------|
 | `bw` or `gray` | Print in black & white |
 | `2x`, `3x`, `4x` | Print multiple copies |
-| `bw 2x` | Combine: B&W + 2 copies |
+| `a4`, `a5` | Specific paper size |
+| `half` | Print A5 content on A4 paper (half sheet layout) |
+| `bw 2x a5` | Combine options |
 
-Options apply to the **next** file only, then reset to defaults (colour, 1 copy). They expire after 10 minutes if no file is sent.
+Options apply to all subsequent files for the **next 30 minutes**. They reset to defaults (colour, 1 copy, A4) after 30 minutes of inactivity.
 
 ---
 

@@ -36,7 +36,7 @@ logger = logging.getLogger("printbot")
 # Constants
 # ---------------------------------------------------------------------------
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 DATA_DIR = "data"
 
 # Maximum characters of stderr to include in error replies
@@ -53,10 +53,10 @@ PRINTABLE_EXTENSIONS = {
     ".doc", ".docx", ".odt",
 }
 
-# Per-chat print options: {chat_id: {"color": bool, "copies": int, "ts": float}}
+# Per-chat print options: {chat_id: {"color": bool, "copies": int, "media": str, "number_up": int, "ts": float}}
 # Entries expire after PRINT_OPTIONS_TTL seconds.
 print_options: dict[int, dict] = {}
-PRINT_OPTIONS_TTL = 600  # 10 minutes
+PRINT_OPTIONS_TTL = 1800  # 30 minutes
 
 # Per-chat rate limiting — minimum seconds between accepted print jobs
 PRINT_COOLDOWN = 10  # seconds
@@ -108,15 +108,15 @@ def get_allowed_chat_ids() -> list[int]:
     return ids
 
 
-def pop_print_options(chat_id: int) -> dict:
-    """Return and remove print options for a chat, respecting the TTL.
+def get_print_options(chat_id: int) -> dict:
+    """Return print options for a chat, respecting the TTL.
 
     Returns defaults if no options are set or the options have expired.
     """
-    entry = print_options.pop(chat_id, None)
+    entry = print_options.get(chat_id)
     if entry and (time.monotonic() - entry.get("ts", 0)) < PRINT_OPTIONS_TTL:
         return entry
-    return {"color": True, "copies": 1}
+    return {"color": True, "copies": 1, "media": "A4", "number_up": 1}
 
 
 async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, int]:
@@ -155,7 +155,10 @@ HELP_TEXT = (
     "*Print options* — send before your file:\n"
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
-    "  `bw 2x` — combine options"
+    "  `a4`, `a5` — specific paper size\n"
+    "  `half` — A5 content on A4 paper (half sheet)\n"
+    "  `bw 2x a5` — combine options\n\n"
+    "_Settings persist for 30 minutes._"
 )
 
 
@@ -279,6 +282,8 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     color = True
     copies = 1
+    media = "A4"
+    number_up = 1
     valid = True
 
     tokens = text.split()
@@ -287,21 +292,35 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             color = False
         elif token in COPY_OPTIONS:
             copies = COPY_OPTIONS[token]
+        elif token == "a4":
+            media = "A4"
+        elif token == "a5":
+            media = "A5"
+        elif token == "half":
+            media = "A4"
+            number_up = 2
         else:
             valid = False
 
     if not valid or not tokens:
         await update.effective_message.reply_text(
-            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `bw 2x`",
+            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`",
             parse_mode="Markdown",
         )
         return
 
-    print_options[chat_id] = {"color": color, "copies": copies, "ts": time.monotonic()}
+    print_options[chat_id] = {
+        "color": color, 
+        "copies": copies, 
+        "media": media,
+        "number_up": number_up,
+        "ts": time.monotonic()
+    }
 
     mode = "B&W" if not color else "Color"
     count = f"{copies} copies" if copies > 1 else "1 copy"
-    await update.effective_message.reply_text(f"⚙️ Next print: {mode}, {count}")
+    format_str = f"{media} (Half Sheet)" if number_up == 2 else media
+    await update.effective_message.reply_text(f"⚙️ Settings updated: {mode}, {count}, {format_str}\n_(Active for 30m)_", parse_mode="Markdown")
 
 
 async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -378,12 +397,14 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await file.download_to_drive(file_path)
     logger.info("File saved at %s", file_path)
 
-    opts = pop_print_options(chat_id)
+    opts = get_print_options(chat_id)
     color = opts["color"]
     copies = opts["copies"]
+    media = opts["media"]
+    number_up = opts["number_up"]
 
     try:
-        await print_file(file_path, color=color, copies=copies)
+        await print_file(file_path, color=color, copies=copies, media=media, number_up=number_up)
 
         # Fire HA webhook in the try block (after confirmed print, before reply)
         await notify_homeassistant(
@@ -420,7 +441,7 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # Core print logic
 # ---------------------------------------------------------------------------
 
-async def print_file(file_path: str, color: bool = True, copies: int = 1) -> str:
+async def print_file(file_path: str, color: bool = True, copies: int = 1, media: str = "A4", number_up: int = 1) -> str:
     """Send a file to the printer using lp.
 
     Always passes -h <CUPS_SERVER> and -d <PRINTER_NAME> explicitly.
@@ -434,9 +455,11 @@ async def print_file(file_path: str, color: bool = True, copies: int = 1) -> str
     server = get_cups_server()
     printer = get_printer_name()
 
-    # Build: lp -h <server> -d <printer> -o fit-to-page -o media=A4 [options] <file>
-    cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", "media=A4"]
+    # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file>
+    cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", f"media={media}"]
 
+    if number_up > 1:
+        cmd += ["-o", f"number-up={number_up}"]
     if not color:
         cmd += ["-o", "ColorModel=Gray"]
     if copies > 1:
