@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] – 2026-04-15
+
+### Fixed
+- **Grayscale printing on Canon printers**: The bot now sends both standard `ColorModel=Gray` and Canon-proprietary `CNColorMode=mono` flags. This ensures grayscale printing works correctly on Canon UFRII LT printers (like the LBP7110Cw) which ignore standard CUPS grayscale commands.
+
+---
+
 ## [1.0.8] – 2026-04-15
 
 ### Added

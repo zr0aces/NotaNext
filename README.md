@@ -161,7 +161,7 @@ Docker images are published automatically to [GitHub Container Registry](https:/
 docker pull ghcr.io/zr0aces/printbot:latest
 
 # Pin to a specific version
-docker pull ghcr.io/zr0aces/printbot:1.0.8
+docker pull ghcr.io/zr0aces/printbot:1.0.9
 ```
 
 See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes.
