@@ -1,8 +1,8 @@
 services:
   printbot:
-    # Use the pre-built image from GitHub Container Registry (no local build needed).
-    # Run `docker compose up -d --build` to build locally instead.
-    image: ghcr.io/zr0aces/printbot:1.0.6
+    # Default: pulls the pre-built image from GitHub Container Registry.
+    # To build locally instead, run: docker compose up -d --build
+    image: ${DOCKER_IMAGE:-ghcr.io/zr0aces/printbot:1.0.6}
     build:
       context: .
       args:
