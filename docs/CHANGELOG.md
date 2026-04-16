@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] – 2026-04-16
+
+### Changed
+- **Project renamed from PrintBot to PimNext**: updated all references across `README.md`, `docker-compose.yml`, `Dockerfile`, `.env.example`, `bot.py`, and the systemd unit file.
+- **Docker image**: new image path is `ghcr.io/zr0aces/pimnext` (previously `ghcr.io/zr0aces/printbot`).
+- **Systemd unit**: `printbot.service` renamed to `pimnext.service`; default working directory updated to `/home/pi/pimnext`.
+- **Home Assistant event**: the webhook event fired after each successful print is now `pimnext_job_sent` (previously `printbot_job_sent`). Update any existing HA automations accordingly.
+- **Logger name**: internal Python logger renamed from `printbot` to `pimnext`.
+- **Bot messages**: welcome and help messages updated to reference PimNext.
+
+---
+
 ## [1.0.9] – 2026-04-15
 
 ### Fixed

@@ -30,7 +30,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
-logger = logging.getLogger("printbot")
+logger = logging.getLogger("pimnext")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -150,7 +150,7 @@ async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, 
 # ---------------------------------------------------------------------------
 
 HELP_TEXT = (
-    "📠 *PrintBot Commands*\n\n"
+    "📠 *PimNext Commands*\n\n"
     "/start — Show the welcome message\n"
     "/help — Show this help message\n"
     "/status — Check printer availability\n"
@@ -176,7 +176,7 @@ HELP_TEXT = (
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
-        "👋 Welcome to *PrintBot*!\n\n"
+        "👋 Welcome to *PimNext*!\n\n"
         "Send me a photo or document and I'll print it for you.\n\n"
         "Use /help to see all available commands.",
         parse_mode="Markdown",
@@ -688,7 +688,7 @@ async def notify_homeassistant(
     if not ha_url or not ha_token:
         return
 
-    url = f"{ha_url}/api/events/printbot_job_sent"
+    url = f"{ha_url}/api/events/pimnext_job_sent"
     payload = {
         "file_name": file_name,
         "chat_id": chat_id,
@@ -827,7 +827,7 @@ def main() -> None:
     allowed_chat_ids = get_allowed_chat_ids()
 
     # Log configuration at startup for easy debugging
-    logger.info("PrintBot v%s starting...", VERSION)
+    logger.info("PimNext v%s starting...", VERSION)
     logger.info(
         "Configuration: CUPS_SERVER=%s  PRINTER_NAME=%s",
         os.getenv("CUPS_SERVER", "(not set)"),

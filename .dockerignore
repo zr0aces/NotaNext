@@ -32,7 +32,7 @@ README.md
 *.md
 
 # ── Systemd unit (host-side only) ────────────────────────────────────────────
-printbot.service
+pimnext.service
 
 # ── Legacy ───────────────────────────────────────────────────────────────────
 Pipfile

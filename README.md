@@ -1,14 +1,14 @@
-# PrintBot
+# PimNext
 
-[![Release](https://img.shields.io/github/v/release/zr0aces/PrintBot)](https://github.com/zr0aces/PrintBot/releases)
-[![Docker Release](https://github.com/zr0aces/PrintBot/actions/workflows/docker-release.yml/badge.svg)](https://github.com/zr0aces/PrintBot/actions/workflows/docker-release.yml)
-[![Docker](https://img.shields.io/badge/ghcr.io-zr0aces%2Fprintbot-blue)](https://github.com/zr0aces/PrintBot/pkgs/container/printbot)
+[![Release](https://img.shields.io/github/v/release/zr0aces/PimNext)](https://github.com/zr0aces/PimNext/releases)
+[![Docker Release](https://github.com/zr0aces/PimNext/actions/workflows/docker-release.yml/badge.svg)](https://github.com/zr0aces/PimNext/actions/workflows/docker-release.yml)
+[![Docker](https://img.shields.io/badge/ghcr.io-zr0aces%2Fpimnext-blue)](https://github.com/zr0aces/PimNext/pkgs/container/pimnext)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.7-blue)](https://python-telegram-bot.org/)
 
 ## Overview
 
-PrintBot is a Telegram bot that sends photos and documents straight to a CUPS-connected printer. Run it on a Raspberry Pi (or any Linux box) as a systemd service or a Docker container, then print anything from your phone by just sending it to the bot.
+PimNext is a Telegram bot that sends photos and documents straight to a CUPS-connected printer. Run it on a Raspberry Pi (or any Linux box) as a systemd service or a Docker container, then print anything from your phone by just sending it to the bot.
 
 **Key features**
 
@@ -75,8 +75,8 @@ chmod 600 .env   # restrict read access — .env contains your Telegram token
 #### Option A — Docker Compose (recommended)
 
 ```bash
-git clone https://github.com/zr0aces/printbot.git
-cd printbot
+git clone https://github.com/zr0aces/PimNext.git
+cd PimNext
 cp .env.example .env   # fill in TOKEN, CUPS_SERVER, PRINTER_NAME
 docker compose up -d
 docker compose logs -f
@@ -93,24 +93,24 @@ docker compose up -d --build
 #### Option B — systemd Service (Raspberry Pi / Linux)
 
 ```bash
-git clone https://github.com/zr0aces/printbot.git /home/pi/printbot
-cd /home/pi/printbot
+git clone https://github.com/zr0aces/PimNext.git /home/pi/pimnext
+cd /home/pi/pimnext
 pip install -r requirements.txt
 cp .env.example .env   # fill in TOKEN, CUPS_SERVER, PRINTER_NAME
 
-sudo cp printbot.service /etc/systemd/system/
+sudo cp pimnext.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now printbot.service
-sudo systemctl status printbot.service
+sudo systemctl enable --now pimnext.service
+sudo systemctl status pimnext.service
 ```
 
-> **Note:** The `printbot.service` file assumes the user `pi` and path `/home/pi/printbot`. Adjust `User=` and `WorkingDirectory=` as needed.
+> **Note:** The `pimnext.service` file assumes the user `pi` and path `/home/pi/pimnext`. Adjust `User=` and `WorkingDirectory=` as needed.
 
 #### Option C — Run directly
 
 ```bash
-git clone https://github.com/zr0aces/printbot.git
-cd printbot
+git clone https://github.com/zr0aces/PimNext.git
+cd PimNext
 pip install -r requirements.txt
 cp .env.example .env   # fill in TOKEN, CUPS_SERVER, PRINTER_NAME
 python3 bot.py
@@ -154,14 +154,14 @@ Options apply to all subsequent files for the **next 30 minutes**. They reset to
 
 ## Releases
 
-Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PrintBot/pkgs/container/printbot) when a version tag is pushed. Multi-arch images are built for **linux/amd64** and **linux/arm64** (Raspberry Pi).
+Docker images are published automatically to [GitHub Container Registry](https://github.com/zr0aces/PimNext/pkgs/container/pimnext) when a version tag is pushed. Multi-arch images are built for **linux/amd64** and **linux/arm64** (Raspberry Pi).
 
 ```bash
 # Pull the latest release
-docker pull ghcr.io/zr0aces/printbot:latest
+docker pull ghcr.io/zr0aces/pimnext:latest
 
 # Pin to a specific version
-docker pull ghcr.io/zr0aces/printbot:1.0.9
+docker pull ghcr.io/zr0aces/pimnext:1.1.0
 ```
 
 See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes.
@@ -190,7 +190,7 @@ See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes.
 |---------|----------|
 | `No default destination` error | Ensure `PRINTER_NAME` is set and matches a printer registered on the CUPS server (`lpstat -v -h <server>`). |
 | Printer not detected | Check CUPS at `http://<cups-host>:631`; ensure the printer is added and enabled. |
-| Bot not responding | Verify `TOKEN` in `.env` is correct and the bot process is running (`docker compose logs printbot`). |
+| Bot not responding | Verify `TOKEN` in `.env` is correct and the bot process is running (`docker compose logs pimnext`). |
 | `/status` shows no printers | Run `lpstat -p -h <cups-host>` on the host to confirm CUPS sees your printer. |
 | Connection refused on port 631 | Make sure the CUPS container/service exposes port 631 and `CUPS_SERVER` points to the correct host. |
 | Permission issues (systemd) | Ensure the running user is in the `lpadmin` group (`sudo usermod -aG lpadmin $USER`). |

@@ -1,13 +1,13 @@
 services:
-  printbot:
+  pimnext:
     # Default: pulls the pre-built image from GitHub Container Registry.
     # To build locally instead, run: docker compose up -d --build
-    image: ${DOCKER_IMAGE:-ghcr.io/zr0aces/printbot:1.0.9}
+    image: ${DOCKER_IMAGE:-ghcr.io/zr0aces/pimnext:1.1.0}
     build:
       context: .
       args:
-        VERSION: "1.0.9"
-    container_name: printbot
+        VERSION: "1.1.0"
+    container_name: pimnext
     restart: always
     environment:
       - CUPS_SERVER=cups
