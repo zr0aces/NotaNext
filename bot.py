@@ -166,7 +166,7 @@ HELP_TEXT = (
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
     "  `a4`, `a5` — specific paper size\n"
-    "  `half` — queue files and print 2 per sheet (2 files = 1 sheet); send `/print` to flush early\n"
+    "  `half` — queue files and print 2 per sheet (use `/print` to flush early)\n"
     "  `bw half` — B&W half-sheet (common combo)\n"
     "  `bw 2x a5` — combine options\n\n"
     "_Settings persist for 30 minutes._"
