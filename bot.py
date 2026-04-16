@@ -159,14 +159,14 @@ HELP_TEXT = (
     "/status — Check printer availability\n"
     "/jobs — Show the print queue\n"
     "/cancel — Cancel all print jobs\n"
-    "/clean — Delete cached files (allowed users only)\n"
-    "/print — Print queued half-mode files now\n\n"
+    "/clean — Delete cached files (allowed users only)\n\n"
     "Send a *photo* or *document* to print it.\n\n"
     "*Print options* — send before your file:\n"
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
     "  `a4`, `a5` — specific paper size\n"
-    "  `half` — queue files and print 2 per sheet (use `/print` to flush early)\n"
+    "  `half` — queue files and print 2 per sheet\n"
+    "  `print` — flush queued half-mode files now\n"
     "  `bw half` — B&W half-sheet (common combo)\n"
     "  `bw 2x a5` — combine options\n\n"
     "_Settings persist for 30 minutes._"
@@ -425,7 +425,8 @@ async def _flush_half_queue(
         file_count = len(entry["files"])
         await update.effective_message.reply_text(
             f"⏳ Please wait {remaining}s before printing. "
-            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends."
+            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends.",
+            parse_mode="Markdown",
         )
         return
 
@@ -481,20 +482,6 @@ async def _flush_half_queue(
                 logger.warning("Could not remove %s: %s", fp, exc)
 
 
-async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Force-print any files currently queued in half mode."""
-    chat_id = update.effective_chat.id
-    entry = half_queue.get(chat_id)
-    if not entry or not entry.get("files"):
-        await update.effective_message.reply_text(
-            "❓ No files queued. Send a file with `half` mode active to queue it.",
-            parse_mode="Markdown",
-        )
-        return
-    opts = get_print_options(chat_id)
-    await _flush_half_queue(update, context, chat_id, opts)
-
-
 async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming photo or document and send it to the printer."""
     user = update.effective_user
@@ -532,7 +519,8 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.effective_message.reply_text(
                 f"📄 File {file_count} queued "
                 f"(~{sheet_count} sheet{'s' if sheet_count != 1 else ''} so far). "
-                f"Send another file to fill this sheet, or send `print` to print now."
+                f"Send another file to fill this sheet, or send `print` to print now.",
+                parse_mode="Markdown",
             )
         else:
             # Even count — auto-flush the queue
@@ -725,7 +713,6 @@ async def post_init(application) -> None:
         BotCommand("jobs", "Show the print queue"),
         BotCommand("cancel", "Cancel all print jobs"),
         BotCommand("clean", "Delete cached files (allowed users only)"),
-        BotCommand("print", "Print queued half-mode files now"),
     ])
 
     # Start periodic cleanup task — track it so exceptions are not silently lost
@@ -886,7 +873,6 @@ def main() -> None:
     application.add_handler(CommandHandler("jobs", jobs_command, filters=chat_id_filter))
     application.add_handler(CommandHandler("cancel", cancel_command, filters=chat_id_filter))
     application.add_handler(CommandHandler("clean", clean, filters=chat_id_filter))
-    application.add_handler(CommandHandler("print", print_command, filters=chat_id_filter))
 
     application.add_handler(
         MessageHandler(
