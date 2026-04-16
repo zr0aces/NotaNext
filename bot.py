@@ -373,7 +373,10 @@ async def _get_file_info(update: Update) -> tuple | None:
     msg = update.effective_message
 
     if msg.photo:
-        photo = max(msg.photo, key=lambda x: x.file_size or 0)
+        # Telegram sends photos ordered smallest → largest; pick the largest with a known size.
+        # Fall back to the last entry (largest by Telegram's ordering) if all sizes are None.
+        photos_with_size = [p for p in msg.photo if p.file_size is not None]
+        photo = max(photos_with_size, key=lambda x: x.file_size) if photos_with_size else msg.photo[-1]
         if photo.file_size and photo.file_size > MAX_FILE_BYTES:
             await msg.reply_text(
                 f"❌ File too large ({photo.file_size // 1024 // 1024} MB). Maximum is 20 MB."
@@ -544,6 +547,8 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     file_info = await _get_file_info(update)
     if file_info is None:
+        # No valid file — not a real print attempt, release the rate-limit slot.
+        last_print_time.pop(chat_id, None)
         return
 
     file_obj, orig_ext = file_info
