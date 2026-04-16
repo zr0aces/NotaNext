@@ -156,14 +156,14 @@ HELP_TEXT = (
     "/status — Check printer availability\n"
     "/jobs — Show the print queue\n"
     "/cancel — Cancel all print jobs\n"
-    "/clean — Delete cached files (allowed users only)\n"
-    "/print — Print queued half-mode files now\n\n"
+    "/clean — Delete cached files (allowed users only)\n\n"
     "Send a *photo* or *document* to print it.\n\n"
     "*Print options* — send before your file:\n"
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
     "  `a4`, `a5` — specific paper size\n"
-    "  `half` — queue files and print 2 per sheet (2 files = 1 sheet); use /print to flush early\n"
+    "  `half` — queue files and print 2 per sheet (2 files = 1 sheet); send `print` to flush early\n"
+    "  `print` — print queued half-mode files now\n"
     "  `bw 2x a5` — combine options\n\n"
     "_Settings persist for 30 minutes._"
 )
@@ -289,6 +289,19 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat_id = update.effective_chat.id
     text = update.effective_message.text.strip().lower()
 
+    # "print" is an action keyword — flush the half-mode queue immediately.
+    if text == "print":
+        entry = half_queue.get(chat_id)
+        if not entry or not entry.get("files"):
+            await update.effective_message.reply_text(
+                "❓ No files queued. Send a file with `half` mode active to queue it.",
+                parse_mode="Markdown",
+            )
+            return
+        opts = get_print_options(chat_id)
+        await _flush_half_queue(update, context, chat_id, opts)
+        return
+
     color = True
     copies = 1
     media = "A4"
@@ -313,7 +326,7 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if not valid or not tokens:
         await update.effective_message.reply_text(
-            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`",
+            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`, `print`",
             parse_mode="Markdown",
         )
         return
@@ -394,7 +407,7 @@ async def _flush_half_queue(
     """Rate-limit, then print all files queued for this chat in half mode.
 
     Clears the queue on success.  Leaves the queue intact when rate-limited so
-    the user can retry with /print after the cooldown expires.
+    the user can retry by sending `print` after the cooldown expires.
     """
     entry = half_queue.get(chat_id)
     if not entry or not entry.get("files"):
@@ -409,7 +422,7 @@ async def _flush_half_queue(
         file_count = len(entry["files"])
         await update.effective_message.reply_text(
             f"⏳ Please wait {remaining}s before printing. "
-            f"Your {file_count} queued file(s) are ready — use /print when the cooldown ends."
+            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends."
         )
         return
 
@@ -511,7 +524,7 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.effective_message.reply_text(
                 f"📄 File {file_count} queued "
                 f"(~{sheet_count} sheet{'s' if sheet_count != 1 else ''} so far). "
-                f"Send another file to fill this sheet, or use /print to print now."
+                f"Send another file to fill this sheet, or send `print` to print now."
             )
         else:
             # Even count — auto-flush the queue
@@ -703,7 +716,6 @@ async def post_init(application) -> None:
         BotCommand("jobs", "Show the print queue"),
         BotCommand("cancel", "Cancel all print jobs"),
         BotCommand("clean", "Delete cached files (allowed users only)"),
-        BotCommand("print", "Print queued half-mode files now"),
     ])
 
     # Start periodic cleanup task — track it so exceptions are not silently lost
@@ -854,7 +866,6 @@ def main() -> None:
     application.add_handler(CommandHandler("jobs", jobs_command, filters=chat_id_filter))
     application.add_handler(CommandHandler("cancel", cancel_command, filters=chat_id_filter))
     application.add_handler(CommandHandler("clean", clean, filters=chat_id_filter))
-    application.add_handler(CommandHandler("print", print_command, filters=chat_id_filter))
 
     application.add_handler(
         MessageHandler(
