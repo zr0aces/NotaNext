@@ -36,7 +36,7 @@ logger = logging.getLogger("printbot")
 # Constants
 # ---------------------------------------------------------------------------
 
-VERSION = "1.0.9"
+VERSION = "1.1.0"
 DATA_DIR = "data"
 
 # Maximum characters of stderr to include in error replies
@@ -61,6 +61,11 @@ PRINT_OPTIONS_TTL = 1800  # 30 minutes
 # Per-chat rate limiting — minimum seconds between accepted print jobs
 PRINT_COOLDOWN = 10  # seconds
 last_print_time: dict[int, float] = {}
+
+# Per-chat half-mode queue: {chat_id: {"files": [path, ...], "ts": float}}
+# Holds downloaded file paths waiting to be paired before printing.
+half_queue: dict[int, dict] = {}
+HALF_QUEUE_TTL = 1800  # 30 minutes — matches PRINT_OPTIONS_TTL
 
 # CUPS binary paths — resolved once at startup to avoid repeated filesystem scans
 LP_BIN: str | None = shutil.which("lp")
@@ -157,7 +162,9 @@ HELP_TEXT = (
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
     "  `a4`, `a5` — specific paper size\n"
-    "  `half` — A5 content on A4 paper (half sheet)\n"
+    "  `half` — queue files and print 2 per sheet (2 files = 1 sheet); send `print` to flush early\n"
+    "  `print` — print queued half-mode files now\n"
+    "  `bw half` — B&W half-sheet (common combo)\n"
     "  `bw 2x a5` — combine options\n\n"
     "_Settings persist for 30 minutes._"
 )
@@ -269,6 +276,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Clear all half-mode queues — their files will be removed by perform_cleanup below
+    half_queue.clear()
     # Offload blocking I/O to a thread pool to avoid stalling the event loop
     removed = await perform_cleanup_async()
     await update.effective_message.reply_text(
@@ -280,6 +289,19 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Parse print option keywords from a text message."""
     chat_id = update.effective_chat.id
     text = update.effective_message.text.strip().lower()
+
+    # "print" is an action keyword — flush the half-mode queue immediately.
+    if text == "print":
+        entry = half_queue.get(chat_id)
+        if not entry or not entry.get("files"):
+            await update.effective_message.reply_text(
+                "❓ No files queued. Send a file with `half` mode active to queue it.",
+                parse_mode="Markdown",
+            )
+            return
+        opts = get_print_options(chat_id)
+        await _flush_half_queue(update, context, chat_id, opts)
+        return
 
     color = True
     copies = 1
@@ -305,7 +327,7 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if not valid or not tokens:
         await update.effective_message.reply_text(
-            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`",
+            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`, `print`",
             parse_mode="Markdown",
         )
         return
@@ -318,10 +340,157 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "ts": time.monotonic()
     }
 
+    # If switching away from half mode, discard any pending queued files.
+    if number_up != 2:
+        old_entry = half_queue.pop(chat_id, None)
+        if old_entry and old_entry.get("files"):
+            for fp in old_entry["files"]:
+                try:
+                    os.remove(fp)
+                    logger.info("Cleared stale half-queue file on option change: %s", fp)
+                except OSError as e:
+                    logger.warning("Could not remove queued file %s: %s", fp, e)
+            notice = f"⚠️ {len(old_entry['files'])} queued file(s) cleared (half mode disabled).\n"
+        else:
+            notice = ""
+    else:
+        notice = ""
+
     mode = "B&W" if not color else "Color"
     count = f"{copies} copies" if copies > 1 else "1 copy"
     format_str = f"{media} (Half Sheet)" if number_up == 2 else media
-    await update.effective_message.reply_text(f"⚙️ Settings updated: {mode}, {count}, {format_str}\n_(Active for 30m)_", parse_mode="Markdown")
+    await update.effective_message.reply_text(f"{notice}⚙️ Settings updated: {mode}, {count}, {format_str}\n_(Active for 30m)_", parse_mode="Markdown")
+
+
+async def _get_file_info(update: Update) -> tuple | None:
+    """Validate and retrieve a file from an incoming message.
+
+    Returns (file_obj, orig_ext) on success, or None after sending an error reply.
+    """
+    msg = update.effective_message
+
+    if msg.photo:
+        photo = max(msg.photo, key=lambda x: x.file_size)
+        if photo.file_size and photo.file_size > MAX_FILE_BYTES:
+            await msg.reply_text(
+                f"❌ File too large ({photo.file_size // 1024 // 1024} MB). Maximum is 20 MB."
+            )
+            return None
+        file = await photo.get_file()
+        return file, ".jpg"
+
+    if msg.document:
+        doc = msg.document
+        orig_ext = os.path.splitext(doc.file_name)[1].lower() if doc.file_name else ""
+        if orig_ext not in PRINTABLE_EXTENSIONS:
+            ext_list = ", ".join(sorted(PRINTABLE_EXTENSIONS))
+            await msg.reply_text(
+                f"❌ Unsupported file type `{orig_ext or '(none)'}`. "
+                f"Supported: {ext_list}",
+                parse_mode="Markdown",
+            )
+            return None
+        if doc.file_size and doc.file_size > MAX_FILE_BYTES:
+            await msg.reply_text(
+                f"❌ File too large ({doc.file_size // 1024 // 1024} MB). Maximum is 20 MB."
+            )
+            return None
+        file = await doc.get_file()
+        return file, orig_ext
+
+    await msg.reply_text("❌ Could not find a printable file in your message.")
+    return None
+
+
+async def _flush_half_queue(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, opts: dict
+) -> None:
+    """Rate-limit, then print all files queued for this chat in half mode.
+
+    Clears the queue on success.  Leaves the queue intact when rate-limited so
+    the user can retry by sending `print` after the cooldown expires.
+    """
+    entry = half_queue.get(chat_id)
+    if not entry or not entry.get("files"):
+        await update.effective_message.reply_text("❓ No files are queued for printing.")
+        return
+
+    # ── Rate limiting ────────────────────────────────────────────────────────
+    now = time.monotonic()
+    elapsed = now - last_print_time.get(chat_id, 0)
+    if elapsed < PRINT_COOLDOWN:
+        remaining = int(PRINT_COOLDOWN - elapsed)
+        file_count = len(entry["files"])
+        await update.effective_message.reply_text(
+            f"⏳ Please wait {remaining}s before printing. "
+            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends."
+        )
+        return
+
+    files = list(entry["files"])
+    half_queue.pop(chat_id, None)
+    last_print_time[chat_id] = time.monotonic()
+
+    file_count = len(files)
+    sheet_count = (file_count + 1) // 2
+
+    try:
+        await print_file(
+            files,
+            color=opts["color"],
+            copies=opts["copies"],
+            media=opts["media"],
+            number_up=opts["number_up"],
+        )
+        await notify_homeassistant(
+            file_name=", ".join(os.path.basename(fp) for fp in files),
+            chat_id=chat_id,
+            copies=opts["copies"],
+            color=opts["color"],
+        )
+        await update.effective_message.reply_text(
+            f"✅ Sent {file_count} file(s) to printer! "
+            f"(~{sheet_count} sheet{'s' if sheet_count != 1 else ''})"
+            + (
+                "\n_(Half mode still active — send your next file when ready.)_"
+                if opts.get("number_up", 1) == 2 else ""
+            ),
+            parse_mode="Markdown",
+        )
+
+    except RuntimeError as e:
+        logger.error("Print failed: %s", e)
+        cmd_used = getattr(e, "cmd", None)
+        msg = f"❌ Print failed: {e}"
+        if cmd_used:
+            msg += f"\n\nCommand used:\n{cmd_used}"
+        await update.effective_message.reply_text(msg)
+
+    except Exception as e:
+        logger.exception("Unexpected error during print: %s", e)
+        await update.effective_message.reply_text(f"❌ Unexpected error: {e}")
+
+    finally:
+        for fp in files:
+            try:
+                os.remove(fp)
+                logger.info("Cleaned up %s", fp)
+            except OSError as exc:
+                logger.warning("Could not remove %s: %s", fp, exc)
+
+
+async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Force-print any files currently queued in half mode."""
+    chat_id = update.effective_chat.id
+    entry = half_queue.get(chat_id)
+    if not entry or not entry.get("files"):
+        await update.effective_message.reply_text(
+            "❓ No files queued. Send a file with `half` mode active to queue it.",
+            parse_mode="Markdown",
+        )
+        return
+    opts = get_print_options(chat_id)
+    await _flush_half_queue(update, context, chat_id, opts)
 
 
 async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -335,7 +504,41 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user.username or "N/A",
     )
 
-    # ── Rate limiting ────────────────────────────────────────────────────────
+    opts = get_print_options(chat_id)
+
+    # ── Half mode: queue files and auto-print every 2 ────────────────────────
+    if opts["number_up"] == 2:
+        file_info = await _get_file_info(update)
+        if file_info is None:
+            return
+
+        file_obj, orig_ext = file_info
+        os.makedirs(DATA_DIR, exist_ok=True)
+        file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
+        await file_obj.download_to_drive(file_path)
+        logger.info("Half-mode: queued file at %s", file_path)
+
+        entry = half_queue.setdefault(chat_id, {"files": [], "ts": 0})
+        entry["files"].append(file_path)
+        entry["ts"] = time.monotonic()
+
+        file_count = len(entry["files"])
+        sheet_count = (file_count + 1) // 2
+
+        if file_count % 2 == 1:
+            # Odd count — waiting for a pairing file
+            await update.effective_message.reply_text(
+                f"📄 File {file_count} queued "
+                f"(~{sheet_count} sheet{'s' if sheet_count != 1 else ''} so far). "
+                f"Send another file to fill this sheet, or send `print` to print now."
+            )
+        else:
+            # Even count — auto-flush the queue
+            await _flush_half_queue(update, context, chat_id, opts)
+        return
+
+    # ── Normal mode ──────────────────────────────────────────────────────────
+    # Rate limiting
     now = time.monotonic()
     elapsed = now - last_print_time.get(chat_id, 0)
     if elapsed < PRINT_COOLDOWN:
@@ -345,49 +548,11 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    # ── Determine file info (validate before downloading) ────────────────────
-    file = None
-    orig_ext = ""
-
-    if update.effective_message.photo:
-        photo = max(update.effective_message.photo, key=lambda x: x.file_size)
-
-        if photo.file_size and photo.file_size > MAX_FILE_BYTES:
-            await update.effective_message.reply_text(
-                f"❌ File too large ({photo.file_size // 1024 // 1024} MB). Maximum is 20 MB."
-            )
-            return
-
-        file = await photo.get_file()
-        orig_ext = ".jpg"  # Telegram photos are always JPEG
-
-    elif update.effective_message.document:
-        doc = update.effective_message.document
-        orig_ext = os.path.splitext(doc.file_name)[1].lower() if doc.file_name else ""
-
-        # Enforce printable-extension whitelist
-        if orig_ext not in PRINTABLE_EXTENSIONS:
-            ext_list = ", ".join(sorted(PRINTABLE_EXTENSIONS))
-            await update.effective_message.reply_text(
-                f"❌ Unsupported file type `{orig_ext or '(none)'}`. "
-                f"Supported: {ext_list}",
-                parse_mode="Markdown",
-            )
-            return
-
-        if doc.file_size and doc.file_size > MAX_FILE_BYTES:
-            await update.effective_message.reply_text(
-                f"❌ File too large ({doc.file_size // 1024 // 1024} MB). Maximum is 20 MB."
-            )
-            return
-
-        file = await doc.get_file()
-
-    if file is None:
-        await update.effective_message.reply_text(
-            "❌ Could not find a printable file in your message."
-        )
+    file_info = await _get_file_info(update)
+    if file_info is None:
         return
+
+    file_obj, orig_ext = file_info
 
     # ── Commit to printing — record timestamp for rate limiting ──────────────
     last_print_time[chat_id] = time.monotonic()
@@ -395,24 +560,24 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Use a UUID-based filename to prevent collisions under concurrent prints
     os.makedirs(DATA_DIR, exist_ok=True)
     file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
-    await file.download_to_drive(file_path)
+    await file_obj.download_to_drive(file_path)
     logger.info("File saved at %s", file_path)
 
-    opts = get_print_options(chat_id)
-    color = opts["color"]
-    copies = opts["copies"]
-    media = opts["media"]
-    number_up = opts["number_up"]
-
     try:
-        await print_file(file_path, color=color, copies=copies, media=media, number_up=number_up)
+        await print_file(
+            [file_path],
+            color=opts["color"],
+            copies=opts["copies"],
+            media=opts["media"],
+            number_up=opts["number_up"],
+        )
 
         # Fire HA webhook in the try block (after confirmed print, before reply)
         await notify_homeassistant(
             file_name=os.path.basename(file_path),
             chat_id=chat_id,
-            copies=copies,
-            color=color,
+            copies=opts["copies"],
+            color=opts["color"],
         )
         await update.effective_message.reply_text("✅ Sent to printer!")
 
@@ -442,8 +607,11 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # Core print logic
 # ---------------------------------------------------------------------------
 
-async def print_file(file_path: str, color: bool = True, copies: int = 1, media: str = "A4", number_up: int = 1) -> str:
-    """Send a file to the printer using lp.
+async def print_file(file_paths: list[str], color: bool = True, copies: int = 1, media: str = "A4", number_up: int = 1) -> str:
+    """Send one or more files to the printer using lp.
+
+    Multiple files are passed as a single lp job so that, combined with
+    number-up=2 (half mode), CUPS places both files on the same physical sheet.
 
     Always passes -h <CUPS_SERVER> and -d <PRINTER_NAME> explicitly.
     Both environment variables are required — raises RuntimeError if missing.
@@ -453,10 +621,13 @@ async def print_file(file_path: str, color: bool = True, copies: int = 1, media:
     if not LP_BIN:
         raise RuntimeError("lp command not found — is cups-client installed?")
 
+    if not file_paths:
+        raise RuntimeError("Internal error: print_file called with empty file list")
+
     server = get_cups_server()
     printer = get_printer_name()
 
-    # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file>
+    # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file(s)>
     cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", f"media={media}"]
 
     if number_up > 1:
@@ -466,7 +637,7 @@ async def print_file(file_path: str, color: bool = True, copies: int = 1, media:
         cmd += ["-o", "ColorModel=Gray", "-o", "CNColorMode=mono"]
     if copies > 1:
         cmd += ["-n", str(copies)]
-    cmd.append(file_path)
+    cmd.extend(file_paths)
 
     cmd_str = " ".join(cmd)
     logger.info("Shell command: %s", cmd_str)
@@ -581,25 +752,53 @@ async def cleanup_task() -> None:
         if expired_chats:
             logger.info("Evicted %d expired print option(s).", len(expired_chats))
 
-        # Remove any leftover downloaded files
+        # Evict expired half-queue entries and delete their files
+        expired_half = [
+            cid for cid, entry in half_queue.items()
+            if (now - entry.get("ts", 0)) >= HALF_QUEUE_TTL
+        ]
+        for cid in expired_half:
+            entry = half_queue.pop(cid, None)
+            if entry:
+                for fp in entry.get("files", []):
+                    try:
+                        os.remove(fp)
+                        logger.info("Evicted stale half-queue file: %s", fp)
+                    except OSError:
+                        pass
+        if expired_half:
+            logger.info("Evicted %d expired half-queue(s).", len(expired_half))
+
+        # Remove leftover downloaded files, but protect files still in an active queue
         logger.info("Running periodic data cleanup...")
         try:
-            removed = await perform_cleanup_async()
+            active_files: frozenset[str] = frozenset(
+                fp
+                for entry in half_queue.values()
+                for fp in entry.get("files", [])
+            )
+            removed = await perform_cleanup_async(frozenset(active_files))
             logger.info("Periodic cleanup removed %d file(s).", removed)
         except Exception as e:
             logger.error("Periodic cleanup failed: %s", e)
 
 
-def perform_cleanup() -> int:
+def perform_cleanup(skip_paths: frozenset[str] | None = None) -> int:
     """Delete all cached files from the data directory. Returns count removed.
+
+    skip_paths: Optional set of absolute file paths to preserve (e.g. active
+    half-queue files that are still awaiting pairing).
 
     Synchronous — safe to call at startup before the event loop starts.
     Use perform_cleanup_async() from async contexts.
     """
+    skip_paths = skip_paths or frozenset()
     removed = 0
     if os.path.exists(DATA_DIR):
         for filename in os.listdir(DATA_DIR):
             filepath = os.path.join(DATA_DIR, filename)
+            if filepath in skip_paths:
+                continue
             try:
                 if os.path.isfile(filepath):
                     os.remove(filepath)
@@ -609,10 +808,10 @@ def perform_cleanup() -> int:
     return removed
 
 
-async def perform_cleanup_async() -> int:
+async def perform_cleanup_async(skip_paths: frozenset[str] | None = None) -> int:
     """Async wrapper for perform_cleanup — offloads blocking I/O to a thread pool."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, perform_cleanup)
+    return await loop.run_in_executor(None, perform_cleanup, skip_paths)
 
 
 # ---------------------------------------------------------------------------
