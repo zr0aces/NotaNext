@@ -30,7 +30,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
-logger = logging.getLogger("printbot")
+logger = logging.getLogger("pimnext")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -52,6 +52,9 @@ PRINTABLE_EXTENSIONS = {
     ".txt",
     ".doc", ".docx", ".odt",
 }
+
+# Pre-sorted display string — reused in every unsupported-type error reply
+PRINTABLE_EXTENSIONS_DISPLAY = ", ".join(sorted(PRINTABLE_EXTENSIONS))
 
 # Per-chat print options: {chat_id: {"color": bool, "copies": int, "media": str, "number_up": int, "ts": float}}
 # Entries expire after PRINT_OPTIONS_TTL seconds.
@@ -150,7 +153,7 @@ async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, 
 # ---------------------------------------------------------------------------
 
 HELP_TEXT = (
-    "📠 *PrintBot Commands*\n\n"
+    "📠 *PimNext Commands*\n\n"
     "/start — Show the welcome message\n"
     "/help — Show this help message\n"
     "/status — Check printer availability\n"
@@ -162,8 +165,8 @@ HELP_TEXT = (
     "  `bw` or `gray` — black & white\n"
     "  `2x`, `3x`, `4x` — multiple copies\n"
     "  `a4`, `a5` — specific paper size\n"
-    "  `half` — queue files and print 2 per sheet (2 files = 1 sheet); send `print` to flush early\n"
-    "  `print` — print queued half-mode files now\n"
+    "  `half` — queue files and print 2 per sheet\n"
+    "  `print` — flush queued half-mode files now\n"
     "  `bw half` — B&W half-sheet (common combo)\n"
     "  `bw 2x a5` — combine options\n\n"
     "_Settings persist for 30 minutes._"
@@ -176,7 +179,7 @@ HELP_TEXT = (
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
-        "👋 Welcome to *PrintBot*!\n\n"
+        "👋 Welcome to *PimNext*!\n\n"
         "Send me a photo or document and I'll print it for you.\n\n"
         "Use /help to see all available commands.",
         parse_mode="Markdown",
@@ -192,6 +195,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not LPSTAT_BIN:
         await update.effective_message.reply_text(
             "⚠️ CUPS client tools (`lpstat`) not found on this system.",
+            parse_mode="Markdown",
         )
         return
 
@@ -222,6 +226,7 @@ async def jobs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not LPSTAT_BIN:
         await update.effective_message.reply_text(
             "⚠️ CUPS client tools (`lpstat`) not found on this system.",
+            parse_mode="Markdown",
         )
         return
 
@@ -253,6 +258,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not CANCEL_BIN:
         await update.effective_message.reply_text(
             "⚠️ CUPS client tools (`cancel`) not found on this system.",
+            parse_mode="Markdown",
         )
         return
 
@@ -370,7 +376,11 @@ async def _get_file_info(update: Update) -> tuple | None:
     msg = update.effective_message
 
     if msg.photo:
-        photo = max(msg.photo, key=lambda x: x.file_size)
+        # `if msg.photo:` guarantees a non-empty list here, so [-1] is safe.
+        # Telegram sends photos ordered smallest → largest; pick the largest with a known size.
+        # Fall back to the last entry (largest by Telegram's ordering) if all sizes are None.
+        photos_with_size = [p for p in msg.photo if p.file_size is not None]
+        photo = max(photos_with_size, key=lambda x: x.file_size) if photos_with_size else msg.photo[-1]
         if photo.file_size and photo.file_size > MAX_FILE_BYTES:
             await msg.reply_text(
                 f"❌ File too large ({photo.file_size // 1024 // 1024} MB). Maximum is 20 MB."
@@ -383,10 +393,9 @@ async def _get_file_info(update: Update) -> tuple | None:
         doc = msg.document
         orig_ext = os.path.splitext(doc.file_name)[1].lower() if doc.file_name else ""
         if orig_ext not in PRINTABLE_EXTENSIONS:
-            ext_list = ", ".join(sorted(PRINTABLE_EXTENSIONS))
             await msg.reply_text(
                 f"❌ Unsupported file type `{orig_ext or '(none)'}`. "
-                f"Supported: {ext_list}",
+                f"Supported: {PRINTABLE_EXTENSIONS_DISPLAY}",
                 parse_mode="Markdown",
             )
             return None
@@ -415,6 +424,12 @@ async def _flush_half_queue(
         await update.effective_message.reply_text("❓ No files are queued for printing.")
         return
 
+    # Files in the half queue were always queued in half mode; ensure opts reflect that
+    # even if the 30-minute TTL has since expired and get_print_options returned defaults.
+    if opts.get("number_up", 1) != 2:
+        opts = dict(opts)
+        opts["number_up"] = 2
+
     # ── Rate limiting ────────────────────────────────────────────────────────
     now = time.monotonic()
     elapsed = now - last_print_time.get(chat_id, 0)
@@ -423,7 +438,8 @@ async def _flush_half_queue(
         file_count = len(entry["files"])
         await update.effective_message.reply_text(
             f"⏳ Please wait {remaining}s before printing. "
-            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends."
+            f"Your {file_count} queued file(s) are ready — send `print` when the cooldown ends.",
+            parse_mode="Markdown",
         )
         return
 
@@ -479,20 +495,6 @@ async def _flush_half_queue(
                 logger.warning("Could not remove %s: %s", fp, exc)
 
 
-async def print_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Force-print any files currently queued in half mode."""
-    chat_id = update.effective_chat.id
-    entry = half_queue.get(chat_id)
-    if not entry or not entry.get("files"):
-        await update.effective_message.reply_text(
-            "❓ No files queued. Send a file with `half` mode active to queue it.",
-            parse_mode="Markdown",
-        )
-        return
-    opts = get_print_options(chat_id)
-    await _flush_half_queue(update, context, chat_id, opts)
-
-
 async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming photo or document and send it to the printer."""
     user = update.effective_user
@@ -530,7 +532,8 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.effective_message.reply_text(
                 f"📄 File {file_count} queued "
                 f"(~{sheet_count} sheet{'s' if sheet_count != 1 else ''} so far). "
-                f"Send another file to fill this sheet, or send `print` to print now."
+                f"Send another file to fill this sheet, or send `print` to print now.",
+                parse_mode="Markdown",
             )
         else:
             # Even count — auto-flush the queue
@@ -548,14 +551,17 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
+    # Claim the rate-limit slot before yielding to the event loop so a second
+    # concurrent message for the same chat cannot slip through the check above.
+    last_print_time[chat_id] = time.monotonic()
+
     file_info = await _get_file_info(update)
     if file_info is None:
+        # No valid file — not a real print attempt, release the rate-limit slot.
+        last_print_time.pop(chat_id, None)
         return
 
     file_obj, orig_ext = file_info
-
-    # ── Commit to printing — record timestamp for rate limiting ──────────────
-    last_print_time[chat_id] = time.monotonic()
 
     # Use a UUID-based filename to prevent collisions under concurrent prints
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -688,7 +694,7 @@ async def notify_homeassistant(
     if not ha_url or not ha_token:
         return
 
-    url = f"{ha_url}/api/events/printbot_job_sent"
+    url = f"{ha_url}/api/events/pimnext_job_sent"
     payload = {
         "file_name": file_name,
         "chat_id": chat_id,
@@ -751,6 +757,16 @@ async def cleanup_task() -> None:
             print_options.pop(cid, None)
         if expired_chats:
             logger.info("Evicted %d expired print option(s).", len(expired_chats))
+
+        # Evict stale last_print_time entries (prevents unbounded growth)
+        stale_rate = [
+            cid for cid, ts in last_print_time.items()
+            if (now - ts) >= PRINT_OPTIONS_TTL
+        ]
+        for cid in stale_rate:
+            last_print_time.pop(cid, None)
+        if stale_rate:
+            logger.info("Evicted %d stale rate-limit entry(ies).", len(stale_rate))
 
         # Evict expired half-queue entries and delete their files
         expired_half = [
@@ -827,7 +843,7 @@ def main() -> None:
     allowed_chat_ids = get_allowed_chat_ids()
 
     # Log configuration at startup for easy debugging
-    logger.info("PrintBot v%s starting...", VERSION)
+    logger.info("PimNext v%s starting...", VERSION)
     logger.info(
         "Configuration: CUPS_SERVER=%s  PRINTER_NAME=%s",
         os.getenv("CUPS_SERVER", "(not set)"),

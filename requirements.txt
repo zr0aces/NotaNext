@@ -1,4 +1,5 @@
 python-telegram-bot==22.7
 # httpx is a transitive dependency of python-telegram-bot and is used directly
-# for async HTTP calls (Home Assistant webhook). Listed here to make it explicit.
-httpx
+# for async HTTP calls (Home Assistant webhook). Pinned to match what
+# python-telegram-bot 22.7 pulls in and avoid silent breakage on version drift.
+httpx==0.28.1
