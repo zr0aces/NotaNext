@@ -97,6 +97,10 @@ PREF_COLOR, PREF_MODE, PREF_PAPER = range(3)
 # Loaded from PREFERENCES_FILE at startup and saved back on every change.
 user_preferences: dict[str, dict] = {}
 
+# Default cap on the number of stored per-chat preference entries.
+# Overridden by MAX_PREFERENCES in the environment (must be a positive integer).
+DEFAULT_MAX_PREFERENCES = 10
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -136,6 +140,28 @@ def get_allowed_chat_ids() -> list[int]:
     return ids
 
 
+def get_preferences_limit() -> int:
+    """Return the maximum number of per-chat preference entries to store.
+
+    Reads MAX_PREFERENCES from the environment (default: DEFAULT_MAX_PREFERENCES).
+    Logs a warning and falls back to the default when the value is invalid.
+    """
+    raw = os.getenv("MAX_PREFERENCES", "")
+    if raw.strip():
+        try:
+            val = int(raw.strip())
+            if val < 1:
+                raise ValueError("must be >= 1")
+            return val
+        except ValueError:
+            logger.warning(
+                "Invalid MAX_PREFERENCES=%r — must be a positive integer. Using default (%d).",
+                raw,
+                DEFAULT_MAX_PREFERENCES,
+            )
+    return DEFAULT_MAX_PREFERENCES
+
+
 def get_print_options(chat_id: int) -> dict:
     """Return print options for a chat, respecting the TTL and extending it on use.
 
@@ -158,12 +184,26 @@ def get_default_preferences(chat_id: int) -> dict:
 
 
 def load_preferences() -> None:
-    """Load per-chat persistent preferences from disk into memory."""
+    """Load per-chat persistent preferences from disk into memory.
+
+    Trims the loaded data to the configured limit (MAX_PREFERENCES) so that a
+    previously oversized file doesn't exceed the current limit at runtime.
+    """
     global user_preferences
     try:
         if os.path.exists(PREFERENCES_FILE):
             with open(PREFERENCES_FILE, "r") as f:
-                user_preferences = json.load(f)
+                data = json.load(f)
+            limit = get_preferences_limit()
+            if len(data) > limit:
+                # Keep only the first `limit` entries (arbitrary but deterministic)
+                data = dict(list(data.items())[:limit])
+                logger.warning(
+                    "Preferences file exceeded limit (%d). Trimmed to %d entries.",
+                    limit,
+                    len(data),
+                )
+            user_preferences = data
             logger.info("Loaded preferences for %d chat(s).", len(user_preferences))
     except Exception as e:
         logger.warning("Could not load preferences file: %s", e)
@@ -341,13 +381,25 @@ async def pref_paper_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     color = context.user_data.pop("pref_color", True)
     half = context.user_data.pop("pref_mode_half", False)
 
+    key = str(chat_id)
+    limit = get_preferences_limit()
+
+    # Enforce the cap: reject new entries beyond the limit (updates to existing entries are always allowed)
+    if key not in user_preferences and len(user_preferences) >= limit:
+        await query.edit_message_text(
+            f"⚠️ The preference store is full ({limit} chat(s) already saved).\n"
+            "A bot administrator can raise the limit via the MAX\\_PREFERENCES environment variable.",
+            parse_mode="Markdown",
+        )
+        return ConversationHandler.END
+
     prefs = {
         "color": color,
         "copies": 1,
         "media": paper,
         "number_up": 2 if half else 1,
     }
-    user_preferences[str(chat_id)] = prefs
+    user_preferences[key] = prefs
     save_preferences()
 
     color_label = "Color" if color else "Gray (B&W)"
