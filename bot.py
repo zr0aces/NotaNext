@@ -88,7 +88,7 @@ LP_BIN: str | None = shutil.which("lp")
 LPSTAT_BIN: str | None = shutil.which("lpstat")
 CANCEL_BIN: str | None = shutil.which("cancel")
 
-COPY_OPTIONS: dict[str, int] = {"2x": 2, "3x": 3, "4x": 4}
+COPY_OPTIONS: dict[str, int] = {"1x": 1, "2x": 2, "3x": 3, "4x": 4}
 
 # Conversation states for the preference-setting wizard
 PREF_COLOR, PREF_MODE, PREF_PAPER = range(3)
@@ -553,31 +553,35 @@ async def set_print_options(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await _flush_half_queue(update, context, chat_id, opts)
         return
 
-    color = True
-    copies = 1
-    media = "A4"
-    number_up = 1
+    current_opts = get_print_options(chat_id)
+    color = current_opts.get("color", True)
+    copies = current_opts.get("copies", 1)
+    media = current_opts.get("media", "A4")
+    number_up = current_opts.get("number_up", 1)
     valid = True
 
     tokens = text.split()
     for token in tokens:
         if token in ("bw", "gray"):
             color = False
+        elif token == "color":
+            color = True
         elif token in COPY_OPTIONS:
             copies = COPY_OPTIONS[token]
         elif token == "a4":
             media = "A4"
         elif token == "a5":
             media = "A5"
-        elif token == "half":
-            media = "A4"
+        elif token in ("half", "2up"):
             number_up = 2
+        elif token in ("normal", "full", "single", "1up"):
+            number_up = 1
         else:
             valid = False
 
     if not valid or not tokens:
         await update.effective_message.reply_text(
-            "❓ Unknown option. Use: `bw`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`, `print`",
+            "❓ Unknown option. Use: `bw`, `color`, `2x`, `3x`, `4x`, `a4`, `a5`, `half`, `normal`, `print`",
             parse_mode="Markdown",
         )
         return
@@ -857,9 +861,16 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # Core print logic
 # ---------------------------------------------------------------------------
 
-def merge_to_pdf(file_paths: list[str], output_path: str) -> None:
-    """Merge images and PDFs into a single monolithic PDF document."""
+def merge_to_pdf(file_paths: list[str], output_path: str, pad_for_half: bool = False) -> None:
+    """Merge images and PDFs into a single monolithic PDF document.
+
+    If pad_for_half is True and exactly one logical page is produced, append a
+    blank page of the same size so CUPS number-up=2 reliably places the content
+    on half of a physical sheet (instead of some drivers scaling full-page).
+    """
     writer = PdfWriter()
+    first_page_width = None
+    first_page_height = None
     
     for fp in file_paths:
         ext = fp.lower().split('.')[-1]
@@ -872,13 +883,22 @@ def merge_to_pdf(file_paths: list[str], output_path: str) -> None:
             img_pdf.seek(0)
             reader = PdfReader(img_pdf)
             for page in reader.pages:
+                if first_page_width is None or first_page_height is None:
+                    first_page_width = float(page.mediabox.width)
+                    first_page_height = float(page.mediabox.height)
                 writer.add_page(page)
         elif ext == 'pdf':
             reader = PdfReader(fp)
             for page in reader.pages:
+                if first_page_width is None or first_page_height is None:
+                    first_page_width = float(page.mediabox.width)
+                    first_page_height = float(page.mediabox.height)
                 writer.add_page(page)
         else:
             raise RuntimeError(f"Half mode merging is only supported for Images and PDFs. Found: .{ext}")
+
+    if pad_for_half and len(writer.pages) == 1 and first_page_width and first_page_height:
+        writer.add_blank_page(width=first_page_width, height=first_page_height)
             
     with open(output_path, "wb") as f:
         writer.write(f)
@@ -901,12 +921,20 @@ async def print_file(file_paths: list[str], color: bool = True, copies: int = 1,
         raise RuntimeError("Internal error: print_file called with empty file list")
 
     merged_path = None
-    if len(file_paths) > 1 and number_up > 1:
-        merged_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}_merged.pdf")
-        await asyncio.to_thread(merge_to_pdf, file_paths, merged_path)
-        print_paths = [merged_path]
-    else:
-        print_paths = list(file_paths)
+    print_paths = list(file_paths)
+    if number_up > 1:
+        mergeable_exts = {".jpg", ".jpeg", ".png", ".gif", ".pdf"}
+        is_mergeable = all(
+            os.path.splitext(path)[1].lower() in mergeable_exts
+            for path in file_paths
+        )
+        if is_mergeable:
+            merged_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}_merged.pdf")
+            # For a single input in half mode, pad with a blank 2nd page so CUPS
+            # consistently applies a true 2-up layout on one physical sheet.
+            pad_for_half = len(file_paths) == 1
+            await asyncio.to_thread(merge_to_pdf, file_paths, merged_path, pad_for_half)
+            print_paths = [merged_path]
 
     server = get_cups_server()
     printer = get_printer_name()
