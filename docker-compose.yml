@@ -2,11 +2,11 @@ services:
   notanext:
     # Default: pulls the pre-built image from GitHub Container Registry.
     # To build locally instead, run: docker compose up -d --build
-    image: ${DOCKER_IMAGE:-ghcr.io/zr0aces/notanext:1.1.1}
+    image: ${DOCKER_IMAGE:-ghcr.io/zr0aces/notanext:1.1.3}
     build:
       context: .
       args:
-        VERSION: "1.1.1"
+        VERSION: "1.1.3"
     container_name: notanext
     restart: always
     environment:

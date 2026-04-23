@@ -48,7 +48,7 @@ logger = logging.getLogger("notanext")
 # Constants
 # ---------------------------------------------------------------------------
 
-VERSION = "1.1.1"
+VERSION = "1.1.3"
 DATA_DIR = "data"
 PREFERENCES_FILE = os.path.join(DATA_DIR, "preferences.json")
 
@@ -401,6 +401,11 @@ async def pref_paper_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
     user_preferences[key] = prefs
     save_preferences()
+
+    # Apply the new defaults immediately for this active chat session.
+    # Without this, a previously cached 30-minute override can keep using old
+    # settings (e.g. normal mode) even though defaults were just saved.
+    print_options[chat_id] = {**prefs, "ts": time.monotonic()}
 
     color_label = "Color" if color else "Gray (B&W)"
     mode_label = "Half sheet" if half else "Normal"

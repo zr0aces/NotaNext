@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.3] – 2026-04-23
+
+### Changed
+- Version bump to `v1.1.3` across runtime constant, Docker tag defaults, and documentation references.
+
+## [1.1.2] – 2026-04-23
+
+### Added
+- **Persistent default print preferences** via `/preferences` (and `/start` wizard): users can now save per-chat defaults for color mode, sheet mode (normal/half), and paper size (A4/A5).
+
+### Changed
+- **Telegram command registration updated**: bot command menu is now kept in sync at startup using `set_my_commands`, including `/preferences` in the registered command list.
+- **Documentation refresh**: README command table and usage sections now document `/preferences`, default-vs-temporary option behavior, and command menu registration.
+
 ## [1.1.1] – 2026-04-16
 
 ### Changed

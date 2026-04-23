@@ -14,6 +14,7 @@ NotaNext is a Telegram bot that sends photos and documents straight to a CUPS-co
 
 - 📄 Print photos and documents sent via Telegram
 - ⚙️ Print options — send `bw`, `2x`, `3x`, `4x` before a file to customise the print
+- 🧩 Guided `/preferences` wizard to save per-chat default print settings
 - 🔒 Access control via numeric chat IDs (`ALLOWED_CHAT_IDS`)
 - 🖨️ CUPS integration — uses `lp` with explicit `-h <server>` and `-d <printer>` flags
 - 🌐 Remote CUPS server support — connects over TCP port 631
@@ -23,6 +24,8 @@ NotaNext is a Telegram bot that sends photos and documents straight to a CUPS-co
 - 🐳 Docker (multi-arch: amd64 & arm64) and systemd deployment options
 - 🪵 Configurable log level via `LOG_LEVEL` env var
 - ✅ No shell injection — all commands use argument lists
+
+At startup, the bot registers its Telegram command menu automatically via `set_my_commands`.
 
 ---
 
@@ -123,7 +126,8 @@ python3 bot.py
 Once the bot is running, open it in Telegram and:
 
 1. Send any **photo** or **document** — the bot forwards it to the printer automatically.
-2. Use the commands below for status and maintenance.
+2. Run `/preferences` (or `/start`) once to save your default print mode.
+3. Use the commands below for status and maintenance.
 
 #### Bot Commands
 
@@ -131,10 +135,21 @@ Once the bot is running, open it in Telegram and:
 |---------|-------------|-------------|
 | `/start` | Show the welcome message | Everyone |
 | `/help` | List available commands | Everyone |
+| `/preferences` | Set persistent default print preferences (color/B&W, normal/half, A4/A5) | Everyone |
 | `/status` | Check printer availability via CUPS | Everyone |
 | `/jobs` | Show the current print queue | Allowed chat IDs only |
 | `/cancel` | Cancel all pending print jobs | Allowed chat IDs only |
 | `/clean` | Delete cached downloaded files | Allowed chat IDs only |
+
+#### Default Preferences
+
+`/preferences` saves your per-chat default profile:
+
+- Color mode: Color or Gray (B&W)
+- Sheet mode: Normal (full page) or Half sheet (2-up)
+- Paper size: A4 or A5
+
+Saved defaults are persistent and automatically used when no temporary override is active.
 
 #### Print Options
 
@@ -150,6 +165,8 @@ Before sending a file, text the bot with one or more options for the **next** pr
 
 Options apply to all subsequent files for the **next 30 minutes**. They reset to defaults (colour, 1 copy, A4) after 30 minutes of inactivity.
 
+Temporary options always override saved defaults during their 30-minute active window.
+
 ---
 
 ## Releases
@@ -161,7 +178,7 @@ Docker images are published automatically to [GitHub Container Registry](https:/
 docker pull ghcr.io/zr0aces/notanext:latest
 
 # Pin to a specific version
-docker pull ghcr.io/zr0aces/notanext:1.1.1
+docker pull ghcr.io/zr0aces/notanext:1.1.3
 ```
 
 See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release notes.
