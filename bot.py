@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shutil
 import time
@@ -9,8 +10,16 @@ import io
 import httpx
 from PIL import Image
 from pypdf import PdfWriter, PdfReader
-from telegram import BotCommand, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ConversationHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +50,7 @@ logger = logging.getLogger("notanext")
 
 VERSION = "1.1.1"
 DATA_DIR = "data"
+PREFERENCES_FILE = os.path.join(DATA_DIR, "preferences.json")
 
 # Maximum characters of stderr to include in error replies
 MAX_STDERR_LENGTH = 300
@@ -79,6 +89,13 @@ LPSTAT_BIN: str | None = shutil.which("lpstat")
 CANCEL_BIN: str | None = shutil.which("cancel")
 
 COPY_OPTIONS: dict[str, int] = {"2x": 2, "3x": 3, "4x": 4}
+
+# Conversation states for the preference-setting wizard
+PREF_COLOR, PREF_MODE, PREF_PAPER = range(3)
+
+# In-memory store of per-chat persistent defaults (keyed by str(chat_id))
+# Loaded from PREFERENCES_FILE at startup and saved back on every change.
+user_preferences: dict[str, dict] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +139,48 @@ def get_allowed_chat_ids() -> list[int]:
 def get_print_options(chat_id: int) -> dict:
     """Return print options for a chat, respecting the TTL and extending it on use.
 
-    Returns defaults if no options are set or the options have expired.
+    Falls back to the chat's saved persistent defaults (or system defaults) if no
+    session options are active.
     """
     entry = print_options.get(chat_id)
     if entry and (time.monotonic() - entry.get("ts", 0)) < PRINT_OPTIONS_TTL:
         entry["ts"] = time.monotonic()  # Extend the session
         return entry
+    return get_default_preferences(chat_id)
+
+
+def get_default_preferences(chat_id: int) -> dict:
+    """Return the saved persistent default preferences for a chat, or system defaults."""
+    saved = user_preferences.get(str(chat_id))
+    if saved:
+        return dict(saved)
     return {"color": True, "copies": 1, "media": "A4", "number_up": 1}
+
+
+def load_preferences() -> None:
+    """Load per-chat persistent preferences from disk into memory."""
+    global user_preferences
+    try:
+        if os.path.exists(PREFERENCES_FILE):
+            with open(PREFERENCES_FILE, "r") as f:
+                user_preferences = json.load(f)
+            logger.info("Loaded preferences for %d chat(s).", len(user_preferences))
+    except Exception as e:
+        logger.warning("Could not load preferences file: %s", e)
+        user_preferences = {}
+
+
+def save_preferences() -> None:
+    """Persist the in-memory user_preferences dict to disk atomically."""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = PREFERENCES_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(user_preferences, f)
+        os.replace(tmp, PREFERENCES_FILE)
+        logger.debug("Preferences saved (%d chat(s)).", len(user_preferences))
+    except Exception as e:
+        logger.error("Could not save preferences: %s", e)
 
 
 async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, int]:
@@ -159,6 +211,7 @@ HELP_TEXT = (
     "📠 *NotaNext Commands*\n\n"
     "/start — Show the welcome message\n"
     "/help — Show this help message\n"
+    "/preferences — Set your default printing preferences\n"
     "/status — Check printer availability\n"
     "/jobs — Show the print queue\n"
     "/cancel — Cancel all print jobs\n"
@@ -172,7 +225,8 @@ HELP_TEXT = (
     "  `print` — flush queued half-mode files now\n"
     "  `bw half` — B&W half-sheet (common combo)\n"
     "  `bw 2x a5` — combine options\n\n"
-    "_Settings persist for 30 minutes._"
+    "_Per-session settings persist for 30 minutes._\n"
+    "_Default settings are saved permanently per chat._"
 )
 
 
@@ -180,13 +234,143 @@ HELP_TEXT = (
 # Command handlers
 # ---------------------------------------------------------------------------
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Welcome the user and launch the default-preference wizard."""
+    chat_id = update.effective_chat.id
+    saved = user_preferences.get(str(chat_id))
+
+    welcome = "👋 Welcome to *NotaNext*!\n\nSend me a photo or document and I'll print it for you.\n\n"
+    if saved:
+        color_label = "Color" if saved.get("color", True) else "Gray (B&W)"
+        mode_label = "Half sheet" if saved.get("number_up", 1) == 2 else "Normal"
+        paper_label = saved.get("media", "A4")
+        welcome += (
+            f"📌 *Current defaults:* {color_label} · {mode_label} · {paper_label}\n\n"
+            "Update your default printing preferences below, or use /help to get started.\n\n"
+        )
+    else:
+        welcome += "Let's set up your default printing preferences.\n\n"
+
+    welcome += "*Color mode?*"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🎨 Color", callback_data="pref_color_yes"),
+            InlineKeyboardButton("⬛ Gray (B&W)", callback_data="pref_color_no"),
+        ]
+    ]
     await update.effective_message.reply_text(
-        "👋 Welcome to *NotaNext*!\n\n"
-        "Send me a photo or document and I'll print it for you.\n\n"
-        "Use /help to see all available commands.",
+        welcome,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return PREF_COLOR
+
+
+async def preferences_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the default-preference wizard directly."""
+    keyboard = [
+        [
+            InlineKeyboardButton("🎨 Color", callback_data="pref_color_yes"),
+            InlineKeyboardButton("⬛ Gray (B&W)", callback_data="pref_color_no"),
+        ]
+    ]
+    await update.effective_message.reply_text(
+        "⚙️ *Set Default Preferences*\n\n*Color mode?*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return PREF_COLOR
+
+
+async def pref_color_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle color-mode selection and ask for sheet mode."""
+    query = update.callback_query
+    await query.answer()
+
+    color = query.data == "pref_color_yes"
+    context.user_data["pref_color"] = color
+    color_label = "Color" if color else "Gray (B&W)"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📄 Normal (full page)", callback_data="pref_mode_normal"),
+            InlineKeyboardButton("📑 Half sheet (2 per page)", callback_data="pref_mode_half"),
+        ]
+    ]
+    await query.edit_message_text(
+        f"✅ Color mode: *{color_label}*\n\n*Sheet mode?*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return PREF_MODE
+
+
+async def pref_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle sheet-mode selection and ask for paper size."""
+    query = update.callback_query
+    await query.answer()
+
+    half = query.data == "pref_mode_half"
+    context.user_data["pref_mode_half"] = half
+    color = context.user_data.get("pref_color", True)
+    color_label = "Color" if color else "Gray (B&W)"
+    mode_label = "Half sheet" if half else "Normal"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("A4", callback_data="pref_paper_A4"),
+            InlineKeyboardButton("A5", callback_data="pref_paper_A5"),
+        ]
+    ]
+    await query.edit_message_text(
+        f"✅ Color mode: *{color_label}*\n✅ Sheet mode: *{mode_label}*\n\n*Paper size?*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    return PREF_PAPER
+
+
+async def pref_paper_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle paper-size selection, save preferences and confirm."""
+    query = update.callback_query
+    await query.answer()
+
+    paper = "A5" if query.data == "pref_paper_A5" else "A4"
+    chat_id = update.effective_chat.id
+    color = context.user_data.pop("pref_color", True)
+    half = context.user_data.pop("pref_mode_half", False)
+
+    prefs = {
+        "color": color,
+        "copies": 1,
+        "media": paper,
+        "number_up": 2 if half else 1,
+    }
+    user_preferences[str(chat_id)] = prefs
+    save_preferences()
+
+    color_label = "Color" if color else "Gray (B&W)"
+    mode_label = "Half sheet" if half else "Normal"
+    await query.edit_message_text(
+        "✅ *Default preferences saved!*\n\n"
+        f"  🎨 Color mode: *{color_label}*\n"
+        f"  📄 Sheet mode: *{mode_label}*\n"
+        f"  📐 Paper size: *{paper}*\n\n"
+        "These will be used every time you print.\n"
+        "Send text options like `bw` or `half` to override them temporarily.\n"
+        "Use /preferences to change your defaults at any time.",
         parse_mode="Markdown",
     )
+    return ConversationHandler.END
+
+
+async def cancel_preferences(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel the preference-setting wizard."""
+    context.user_data.pop("pref_color", None)
+    context.user_data.pop("pref_mode_half", None)
+    await update.effective_message.reply_text("❌ Preference setup cancelled.")
+    return ConversationHandler.END
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -770,6 +954,7 @@ async def post_init(application) -> None:
     await application.bot.set_my_commands([
         BotCommand("start", "Show the welcome message"),
         BotCommand("help", "Show available commands"),
+        BotCommand("preferences", "Set your default printing preferences"),
         BotCommand("status", "Check printer availability"),
         BotCommand("jobs", "Show the print queue"),
         BotCommand("cancel", "Cancel all print jobs"),
@@ -851,10 +1036,12 @@ def perform_cleanup(skip_paths: frozenset[str] | None = None) -> int:
     skip_paths: Optional set of absolute file paths to preserve (e.g. active
     half-queue files that are still awaiting pairing).
 
+    The persistent preferences file is always preserved regardless of skip_paths.
+
     Synchronous — safe to call at startup before the event loop starts.
     Use perform_cleanup_async() from async contexts.
     """
-    skip_paths = skip_paths or frozenset()
+    skip_paths = (skip_paths or frozenset()) | {PREFERENCES_FILE}
     removed = 0
     if os.path.exists(DATA_DIR):
         for filename in os.listdir(DATA_DIR):
@@ -909,6 +1096,9 @@ def main() -> None:
     logger.info("Performing startup cleanup...")
     perform_cleanup()
 
+    # Load persistent per-chat preferences (sync — before event loop starts)
+    load_preferences()
+
     application = (
         ApplicationBuilder()
         .token(token)
@@ -916,8 +1106,21 @@ def main() -> None:
         .build()
     )
 
-    # Public commands (no access restriction)
-    application.add_handler(CommandHandler("start", start))
+    # Preference-setting wizard — handles /start and /preferences
+    pref_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("start", start),
+            CommandHandler("preferences", preferences_command),
+        ],
+        states={
+            PREF_COLOR: [CallbackQueryHandler(pref_color_callback, pattern="^pref_color_")],
+            PREF_MODE: [CallbackQueryHandler(pref_mode_callback, pattern="^pref_mode_")],
+            PREF_PAPER: [CallbackQueryHandler(pref_paper_callback, pattern="^pref_paper_")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_preferences)],
+    )
+    application.add_handler(pref_conv)
+
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status))
 
