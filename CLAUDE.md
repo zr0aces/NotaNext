@@ -131,3 +131,11 @@ The invalid-`LOG_LEVEL` warning at the top of `bot.py` prints to stdout because 
 `docker-compose.yml` deliberately has **no `environment:` block** — it once hardcoded `CUPS_SERVER`, `PRINTER_NAME` and `TZ`, which silently overrode `env_file:` and made editing `.env` a no-op. All configuration comes from `.env`.
 
 `notanext.service` runs under `ProtectSystem=strict` with `ReadWritePaths=/home/pi/notanext/data`. Any new write path outside `data/` will fail silently under systemd even though it works in Docker.
+
+## Plans
+
+When creating a plan file under `docs/plans/`, the filename must include the creation date using the format `YYYY-MM-dd-plan-name.md`.
+Use the actual date when the plan is created.
+Use a clear, descriptive name for `plan-name`.
+
+Example: `2026-09-12-document-figures-alignment.md`
