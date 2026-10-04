@@ -1,19 +1,18 @@
 import asyncio
-import io
 import json
 import logging
 import os
 import shutil
+import sys
 import time
 import uuid
 import warnings
 from dataclasses import asdict, dataclass, field, replace
 
 import httpx
-from PIL import Image
-from pypdf import PdfReader, PdfWriter
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
@@ -54,9 +53,9 @@ logger = logging.getLogger("notanext")
 
 # Fallback used only if the VERSION file is missing or unreadable. Named (not
 # inlined) so scripts/bump_version.py has a stable assignment to rewrite on
-# every bump — do not phrase this comment as `DEFAULT_VERSION = "1.2.2"` or the
+# every bump — do not phrase this comment as `DEFAULT_VERSION = "1.3.0"` or the
 # bump script's regex will rewrite the comment too.
-DEFAULT_VERSION = "1.2.2"
+DEFAULT_VERSION = "1.3.0"
 
 
 def _load_version() -> str:
@@ -74,6 +73,12 @@ def _load_version() -> str:
 VERSION = _load_version()
 DATA_DIR = "data"
 PREFERENCES_FILE = os.path.join(DATA_DIR, "preferences.json")
+CORRUPT_PREFERENCES_FILE = os.path.join(DATA_DIR, "preferences.json.corrupt")
+
+# Merge child script path and timeout
+MERGE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "merge_pdf.py")
+MERGE_TIMEOUT = 60
+MAX_HALF_QUEUE_FILES = 10
 
 # Maximum characters of stderr to include in error replies
 MAX_STDERR_LENGTH = 300
@@ -204,6 +209,7 @@ print_options: dict[int, PrintOptions] = {}
 last_print_time: dict[int, float] = {}
 half_queue: dict[int, HalfQueueEntry] = {}
 user_preferences: dict[str, PrintOptions] = {}
+in_flight_paths: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -298,18 +304,46 @@ def get_default_preferences(chat_id: int) -> PrintOptions:
     return PrintOptions()
 
 
+def discard_half_queue(chat_id: int) -> int:
+    """Discard pending half-queue files for a chat. Returns count of removed files."""
+    old_entry = half_queue.pop(chat_id, None)
+    if old_entry and old_entry.files:
+        for fp in old_entry.files:
+            try:
+                os.remove(fp)
+                logger.info("Cleared half-queue file: %s", fp)
+            except OSError as e:
+                logger.warning("Could not remove queued file %s: %s", fp, e)
+        return len(old_entry.files)
+    return 0
+
+
+def get_half_queue(chat_id: int) -> HalfQueueEntry | None:
+    """Return active half-queue entry for chat_id, discarding files if expired."""
+    entry = half_queue.get(chat_id)
+    if not entry:
+        return None
+    if (time.monotonic() - entry.ts) >= SESSION_TTL:
+        discard_half_queue(chat_id)
+        return None
+    return entry
+
+
 def load_preferences() -> None:
     """Load per-chat persistent preferences from disk into memory.
 
     Trims the loaded data to MAX_PREFERENCES so an oversized file from an older
-    build doesn't exceed the cap at runtime.
+    build doesn't exceed the cap at runtime. On corrupt JSON or shape failure,
+    the corrupt file is quarantined to preferences.json.corrupt and logged at ERROR.
     """
     global user_preferences
+    if not os.path.exists(PREFERENCES_FILE):
+        return
     try:
-        if not os.path.exists(PREFERENCES_FILE):
-            return
         with open(PREFERENCES_FILE, "r") as f:
             data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"Preferences root must be a dict, got {type(data).__name__}")
         if len(data) > MAX_PREFERENCES:
             # Keep only the first MAX_PREFERENCES entries (arbitrary but deterministic)
             data = dict(list(data.items())[:MAX_PREFERENCES])
@@ -323,21 +357,35 @@ def load_preferences() -> None:
         user_preferences = loaded
         logger.info("Loaded preferences for %d chat(s).", len(user_preferences))
     except Exception as e:
-        logger.warning("Could not load preferences file: %s", e)
+        logger.error("Could not load preferences file, quarantining to %s: %s", CORRUPT_PREFERENCES_FILE, e)
+        try:
+            os.replace(PREFERENCES_FILE, CORRUPT_PREFERENCES_FILE)
+        except OSError as rename_err:
+            logger.error("Failed to rename corrupt preferences file: %s", rename_err)
         user_preferences = {}
 
 
 def save_preferences() -> None:
     """Persist the in-memory user_preferences dict to disk atomically."""
+    tmp = PREFERENCES_FILE + ".tmp"
+    in_flight_paths.add(tmp)
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
-        tmp = PREFERENCES_FILE + ".tmp"
         with open(tmp, "w") as f:
             json.dump({k: v.to_dict() for k, v in user_preferences.items()}, f)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, PREFERENCES_FILE)
         logger.debug("Preferences saved (%d chat(s)).", len(user_preferences))
     except Exception as e:
         logger.error("Could not save preferences: %s", e)
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    finally:
+        in_flight_paths.discard(tmp)
 
 
 async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, int]:
@@ -404,8 +452,8 @@ HELP_TEXT = (
     "/preferences — Set your default printing preferences\n"
     "/status — Check printer availability\n"
     "/jobs — Show the print queue\n"
-    "/cancel — Cancel all print jobs\n"
-    "/clean — Delete cached files (allowed users only)\n\n"
+    "/cancel — Cancel all jobs on this printer\n"
+    "/clean — Delete cached files and clear your queue\n\n"
     "Send a *photo* or *document* to print it.\n\n"
     "*Print options* — send before your file:\n"
     "  `bw` or `gray` — black & white\n"
@@ -512,6 +560,10 @@ async def pref_paper_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_preferences[key] = replace(draft, ts=0.0)
     save_preferences()
 
+    # If saving normal mode, discard any pending half-queue files.
+    if draft.number_up != 2:
+        discard_half_queue(chat_id)
+
     # Apply the new defaults immediately for this active chat session.
     # Without this, a previously cached 30-minute override can keep using old
     # settings (e.g. normal mode) even though defaults were just saved.
@@ -567,8 +619,14 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def jobs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show the current CUPS print queue."""
-    stdout, error = await run_cups_query(LPSTAT_BIN, "lpstat", ["-o"], "Print queue check")
+    """Show the current CUPS print queue for the configured printer."""
+    try:
+        printer = get_printer_name()
+    except RuntimeError as e:
+        await update.effective_message.reply_text(f"⚠️ Configuration error: {e}")
+        return
+
+    stdout, error = await run_cups_query(LPSTAT_BIN, "lpstat", ["-o", printer], "Print queue check")
 
     if error:
         msg = error
@@ -582,18 +640,40 @@ async def jobs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel all pending print jobs."""
-    _, error = await run_cups_query(CANCEL_BIN, "cancel", ["-a"], "Cancel command")
+    """Cancel all pending print jobs for the configured printer."""
+    try:
+        printer = get_printer_name()
+    except RuntimeError as e:
+        await update.effective_message.reply_text(f"⚠️ Configuration error: {e}")
+        return
+
+    _, error = await run_cups_query(CANCEL_BIN, "cancel", ["-a", printer], "Cancel command")
     # No parse_mode: `error` may carry raw CUPS stderr — see run_cups_query().
     await update.effective_message.reply_text(error or "🗑️ All print jobs cancelled")
 
 
 async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Delete every cached file in the data directory, including queued files."""
-    # Clear all half-mode queues — their files will be removed by perform_cleanup below
-    half_queue.clear()
-    # Offload blocking I/O to a thread pool to avoid stalling the event loop
-    removed = await perform_cleanup_async()
+    """Delete cached files from the data directory and clear caller's queued files."""
+    chat_id = update.effective_chat.id
+    # Clear only the calling chat's half-mode queue
+    entry = half_queue.pop(chat_id, None)
+    if entry:
+        for fp in entry.files:
+            try:
+                os.remove(fp)
+                logger.info("Cleared caller half-queue file on clean: %s", fp)
+            except OSError:
+                pass
+
+    # Preserve other chats' queued files as well as in-flight paths
+    other_queued = {
+        fp
+        for cid, q in half_queue.items()
+        if cid != chat_id
+        for fp in q.files
+    }
+    skip_set = frozenset(other_queued | in_flight_paths)
+    removed = await perform_cleanup_async(skip_set, min_age=0)
     await update.effective_message.reply_text(
         f"🗑️ Cleaned up {removed} cached file(s) from the data folder."
     )
@@ -611,7 +691,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # "print" is an action keyword — flush the half-mode queue immediately.
     if text == "print":
-        entry = half_queue.get(chat_id)
+        entry = get_half_queue(chat_id)
         if not entry or not entry.files:
             await update.effective_message.reply_text(
                 "❓ No files queued. Send a file with `half` mode active to queue it.",
@@ -639,15 +719,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # If switching away from half mode, discard any pending queued files.
     notice = ""
     if opts.number_up != 2:
-        old_entry = half_queue.pop(chat_id, None)
-        if old_entry and old_entry.files:
-            for fp in old_entry.files:
-                try:
-                    os.remove(fp)
-                    logger.info("Cleared stale half-queue file on option change: %s", fp)
-                except OSError as e:
-                    logger.warning("Could not remove queued file %s: %s", fp, e)
-            notice = f"⚠️ {len(old_entry.files)} queued file(s) cleared (half mode disabled).\n"
+        cleared_count = discard_half_queue(chat_id)
+        if cleared_count:
+            notice = f"⚠️ {cleared_count} queued file(s) cleared (half mode disabled).\n"
 
     count = f"{opts.copies} copies" if opts.copies > 1 else "1 copy"
     format_str = f"{opts.media} (Half Sheet)" if opts.number_up == 2 else opts.media
@@ -682,10 +756,10 @@ async def _get_file_info(update: Update) -> tuple | None:
         doc = msg.document
         orig_ext = os.path.splitext(doc.file_name)[1].lower() if doc.file_name else ""
         if orig_ext not in PRINTABLE_EXTENSIONS:
+            ext_label = f"'{orig_ext}'" if orig_ext else "'(none)'"
             await msg.reply_text(
-                f"❌ Unsupported file type `{orig_ext or '(none)'}`. "
-                f"Supported: {PRINTABLE_EXTENSIONS_DISPLAY}",
-                parse_mode="Markdown",
+                f"❌ Unsupported file type {ext_label}. "
+                f"Supported: {PRINTABLE_EXTENSIONS_DISPLAY}"
             )
             return None
         if doc.file_size and doc.file_size > MAX_FILE_BYTES:
@@ -725,24 +799,26 @@ async def _print_and_reply(
         await update.effective_message.reply_text(success_text, parse_mode="Markdown")
 
     except RuntimeError as e:
-        logger.error("Print failed: %s", e)
         cmd_used = getattr(e, "cmd", None)
-        msg = f"❌ Print failed: {e}"
         if cmd_used:
-            msg += f"\n\nCommand used:\n{cmd_used}"
-        await update.effective_message.reply_text(msg)
+            logger.error("Print failed: %s (command: %s)", e, cmd_used)
+        else:
+            logger.error("Print failed: %s", e)
+        await update.effective_message.reply_text(f"❌ Print failed: {e}")
 
     except Exception as e:
         logger.exception("Unexpected error during print: %s", e)
-        await update.effective_message.reply_text(f"❌ Unexpected error: {e}")
+        await update.effective_message.reply_text("❌ An unexpected error occurred while printing.")
 
     finally:
         for fp in file_paths:
+            in_flight_paths.discard(fp)
             try:
                 os.remove(fp)
                 logger.info("Cleaned up %s", fp)
             except OSError as exc:
-                logger.warning("Could not remove %s: %s", fp, exc)
+                if os.path.exists(fp):
+                    logger.warning("Could not remove %s: %s", fp, exc)
 
 
 async def _flush_half_queue(
@@ -753,7 +829,7 @@ async def _flush_half_queue(
     Clears the queue on success.  Leaves the queue intact when rate-limited so
     the user can retry by sending `print` after the cooldown expires.
     """
-    entry = half_queue.get(chat_id)
+    entry = get_half_queue(chat_id)
     if not entry or not entry.files:
         await update.effective_message.reply_text("❓ No files are queued for printing.")
         return
@@ -774,6 +850,7 @@ async def _flush_half_queue(
         return
 
     files = list(entry.files)
+    in_flight_paths.update(files)
     half_queue.pop(chat_id, None)
     last_print_time[chat_id] = time.monotonic()
 
@@ -806,6 +883,15 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # ── Half mode: queue files and auto-print every 2 ────────────────────────
     if opts.number_up == 2:
+        queue = get_half_queue(chat_id)
+        if queue and len(queue.files) >= MAX_HALF_QUEUE_FILES:
+            await update.effective_message.reply_text(
+                f"⚠️ Queue is full ({MAX_HALF_QUEUE_FILES} files maximum). "
+                "Send `print` to print your queued files first.",
+                parse_mode="Markdown",
+            )
+            return
+
         file_info = await _get_file_info(update)
         if file_info is None:
             return
@@ -825,12 +911,23 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         os.makedirs(DATA_DIR, exist_ok=True)
         file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
-        await file_obj.download_to_drive(file_path)
+        in_flight_paths.add(file_path)
+        try:
+            await file_obj.download_to_drive(file_path)
+        except BaseException:
+            in_flight_paths.discard(file_path)
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+            raise
+
         logger.info("Half-mode: queued file at %s", file_path)
 
         entry = half_queue.setdefault(chat_id, HalfQueueEntry())
         entry.files.append(file_path)
         entry.ts = time.monotonic()
+        in_flight_paths.discard(file_path)
 
         file_count = len(entry.files)
         sheet_count = (file_count + 1) // 2
@@ -871,7 +968,16 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Use a UUID-based filename to prevent collisions under concurrent prints
     os.makedirs(DATA_DIR, exist_ok=True)
     file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
-    await file_obj.download_to_drive(file_path)
+    in_flight_paths.add(file_path)
+    try:
+        await file_obj.download_to_drive(file_path)
+    except BaseException:
+        in_flight_paths.discard(file_path)
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        raise
     logger.info("File saved at %s", file_path)
 
     await _print_and_reply(update, chat_id, [file_path], opts, "✅ Sent to printer!")
@@ -880,47 +986,6 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------------------------
 # Core print logic
 # ---------------------------------------------------------------------------
-
-def merge_to_pdf(file_paths: list[str], output_path: str, pad_for_half: bool = False) -> None:
-    """Merge images and PDFs into a single monolithic PDF document.
-
-    If pad_for_half is True and exactly one logical page is produced, append a
-    blank page of the same size so CUPS number-up=2 reliably places the content
-    on half of a physical sheet (instead of some drivers scaling full-page).
-    """
-    writer = PdfWriter()
-    first_page_width: float | None = None
-    first_page_height: float | None = None
-
-    def _add_pages_from_reader(reader: PdfReader) -> None:
-        nonlocal first_page_width, first_page_height
-        for page in reader.pages:
-            if first_page_width is None or first_page_height is None:
-                first_page_width = float(page.mediabox.width)
-                first_page_height = float(page.mediabox.height)
-            writer.add_page(page)
-
-    for fp in file_paths:
-        ext = os.path.splitext(fp)[1].lower()
-        if ext in ('.jpg', '.jpeg', '.png', '.gif'):
-            with Image.open(fp) as img:
-                img_pdf = io.BytesIO()
-                (img if img.mode == 'RGB' else img.convert('RGB')).save(img_pdf, format='PDF')
-            img_pdf.seek(0)
-            _add_pages_from_reader(PdfReader(img_pdf))
-        elif ext == '.pdf':
-            # add_page() clones eagerly, so the handle can close once the loop ends.
-            with open(fp, 'rb') as pdf_f:
-                _add_pages_from_reader(PdfReader(pdf_f))
-        else:
-            raise RuntimeError(f"Half mode merging is only supported for Images and PDFs. Found: {ext}")
-
-    if pad_for_half and len(writer.pages) == 1 and first_page_width and first_page_height:
-        writer.add_blank_page(width=first_page_width, height=first_page_height)
-
-    with open(output_path, "wb") as f:
-        writer.write(f)
-
 
 async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
     """Send one or more files to the printer using lp.
@@ -938,65 +1003,96 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
     if not file_paths:
         raise RuntimeError("Internal error: print_file called with empty file list")
 
-    merged_path = None
-    print_paths = list(file_paths)
-    if opts.number_up > 1:
-        unmergeable = [
-            os.path.basename(path)
-            for path in file_paths
-            if os.path.splitext(path)[1].lower() not in MERGEABLE_EXTENSIONS
-        ]
-        if unmergeable:
-            raise RuntimeError(
-                f"Half mode cannot combine: {', '.join(unmergeable)}. "
-                f"Supported: {MERGEABLE_EXTENSIONS_DISPLAY}"
-            )
-        merged_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}_merged.pdf")
-        # For a single input in half mode, pad with a blank 2nd page so CUPS
-        # consistently applies a true 2-up layout on one physical sheet.
-        pad_for_half = len(file_paths) == 1
-        await asyncio.to_thread(merge_to_pdf, file_paths, merged_path, pad_for_half)
-        print_paths = [merged_path]
+    merged_path: str | None = None
+    merge_proc = None
+    lp_proc = None
 
-    server = get_cups_server()
-    printer = get_printer_name()
-
-    # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file(s)>
-    cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", f"media={opts.media}"]
-
-    if opts.number_up > 1:
-        cmd += ["-o", f"number-up={opts.number_up}"]
-    if not opts.color:
-        # ColorModel=Gray is standard CUPS; CNColorMode=mono is Canon UFRII specific
-        cmd += ["-o", "ColorModel=Gray", "-o", "CNColorMode=mono"]
-    if opts.copies > 1:
-        cmd += ["-n", str(opts.copies)]
-    cmd.extend(print_paths)
-
-    cmd_str = " ".join(cmd)
-    logger.info("Shell command: %s", cmd_str)
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
+        print_paths = list(file_paths)
+        if opts.number_up > 1:
+            unmergeable = [
+                os.path.basename(path)
+                for path in file_paths
+                if os.path.splitext(path)[1].lower() not in MERGEABLE_EXTENSIONS
+            ]
+            if unmergeable:
+                raise RuntimeError(
+                    f"Half mode cannot combine: {', '.join(unmergeable)}. "
+                    f"Supported: {MERGEABLE_EXTENSIONS_DISPLAY}"
+                )
+            merged_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}_merged.pdf")
+            in_flight_paths.add(merged_path)
+
+            pad_for_half = "1" if len(file_paths) == 1 else "0"
+            merge_proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                MERGE_SCRIPT,
+                merged_path,
+                pad_for_half,
+                *file_paths,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                m_stdout, m_stderr = await asyncio.wait_for(merge_proc.communicate(), timeout=MERGE_TIMEOUT)
+            except asyncio.TimeoutError:
+                merge_proc.kill()
+                await merge_proc.wait()
+                raise RuntimeError("Merging took too long (over 60 s) — the file may be too complex.")
+            except asyncio.CancelledError:
+                merge_proc.kill()
+                await merge_proc.wait()
+                raise
+
+            if merge_proc.returncode != 0:
+                if merge_proc.returncode < 0:
+                    raise RuntimeError("Merge was stopped (file too large or too complex).")
+                err_str = m_stderr.decode().strip()[:MAX_STDERR_LENGTH]
+                raise RuntimeError(err_str or "Merge failed.")
+
+            print_paths = [merged_path]
+
+        server = get_cups_server()
+        printer = get_printer_name()
+
+        # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file(s)>
+        cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", f"media={opts.media}"]
+
+        if opts.number_up > 1:
+            cmd += ["-o", f"number-up={opts.number_up}"]
+        if not opts.color:
+            # ColorModel=Gray is standard CUPS; CNColorMode=mono is Canon UFRII specific
+            cmd += ["-o", "ColorModel=Gray", "-o", "CNColorMode=mono"]
+        if opts.copies > 1:
+            cmd += ["-n", str(opts.copies)]
+        cmd.extend(print_paths)
+
+        cmd_str = " ".join(cmd)
+        logger.info("Shell command: %s", cmd_str)
+
+        lp_proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            stdout, stderr = await asyncio.wait_for(lp_proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
-            # Kill and reap the process to prevent zombie / fd leak
-            process.kill()
-            await process.wait()
+            lp_proc.kill()
+            await lp_proc.wait()
             ex = RuntimeError("lp command timed out after 30 seconds")
             ex.cmd = cmd_str  # type: ignore[attr-defined]
             raise ex
+        except asyncio.CancelledError:
+            lp_proc.kill()
+            await lp_proc.wait()
+            raise
 
-        if process.returncode != 0:
+        if lp_proc.returncode != 0:
             err_str = stderr.decode().strip()[:MAX_STDERR_LENGTH]
             logger.error(
                 "lp failed (returncode=%s) stderr: %s",
-                process.returncode,
+                lp_proc.returncode,
                 stderr.decode(),
             )
             ex = RuntimeError(err_str or "Print command failed")
@@ -1006,11 +1102,13 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
         logger.info("lp stdout: %s", stdout.decode().strip())
     finally:
         if merged_path:
+            in_flight_paths.discard(merged_path)
             try:
                 os.remove(merged_path)
                 logger.info("Cleaned up merged file %s", merged_path)
             except OSError as e:
-                logger.warning("Could not remove merged file %s: %s", merged_path, e)
+                if os.path.exists(merged_path):
+                    logger.warning("Could not remove merged file %s: %s", merged_path, e)
 
 
 # ---------------------------------------------------------------------------
@@ -1072,8 +1170,8 @@ async def post_init(application) -> None:
         BotCommand("preferences", "Set your default printing preferences"),
         BotCommand("status", "Check printer availability"),
         BotCommand("jobs", "Show the print queue"),
-        BotCommand("cancel", "Cancel all print jobs"),
-        BotCommand("clean", "Delete cached files (allowed users only)"),
+        BotCommand("cancel", "Cancel all jobs on this printer"),
+        BotCommand("clean", "Delete cached files and clear queue"),
     ])
 
     # Start periodic cleanup task — track it so exceptions are not silently lost
@@ -1166,40 +1264,49 @@ async def cleanup_task() -> None:
         if expired_half:
             logger.info("Evicted %d expired half-queue(s).", len(expired_half))
 
-        # Remove leftover downloaded files, but protect files still in an active queue
+        # Remove leftover downloaded files, but protect files in active queue or in flight
         logger.info("Running periodic data cleanup...")
         try:
-            active_files: frozenset[str] = frozenset(
+            active_files = {
                 fp
                 for entry in half_queue.values()
                 for fp in entry.files
-            )
-            removed = await perform_cleanup_async(active_files)
+            }
+            skip_set = frozenset(active_files | in_flight_paths)
+            removed = await perform_cleanup_async(skip_set, min_age=SESSION_TTL)
             logger.info("Periodic cleanup removed %d file(s).", removed)
         except Exception as e:
             logger.error("Periodic cleanup failed: %s", e)
 
 
-def perform_cleanup(skip_paths: frozenset[str] | None = None) -> int:
+def perform_cleanup(skip_paths: frozenset[str] | None = None, min_age: float = 0) -> int:
     """Delete all cached files from the data directory. Returns count removed.
 
     skip_paths: Optional set of absolute file paths to preserve (e.g. active
-    half-queue files that are still awaiting pairing).
+    half-queue files that are still awaiting pairing or in-flight downloads).
 
-    The persistent preferences file is always preserved regardless of skip_paths.
+    The persistent preferences file and any corrupt backup file are always
+    preserved regardless of skip_paths.
+
+    If min_age > 0, files whose mtime is newer than (time.time() - min_age) are kept.
 
     Synchronous — safe to call at startup before the event loop starts.
     Use perform_cleanup_async() from async contexts.
     """
-    skip_paths = (skip_paths or frozenset()) | {PREFERENCES_FILE}
+    raw_skip = (set(skip_paths) if skip_paths else set()) | {PREFERENCES_FILE, CORRUPT_PREFERENCES_FILE}
+    normalized_skip = {os.path.normpath(p) for p in raw_skip}
+    now = time.time()
+    cutoff = now - min_age if min_age > 0 else 0.0
     removed = 0
     try:
         with os.scandir(DATA_DIR) as entries:
             for entry in entries:
-                if entry.path in skip_paths:
+                if os.path.normpath(entry.path) in normalized_skip:
                     continue
                 try:
                     if entry.is_file():
+                        if min_age > 0 and entry.stat().st_mtime > cutoff:
+                            continue
                         os.remove(entry.path)
                         removed += 1
                 except OSError as e:
@@ -1209,48 +1316,29 @@ def perform_cleanup(skip_paths: frozenset[str] | None = None) -> int:
     return removed
 
 
-async def perform_cleanup_async(skip_paths: frozenset[str] | None = None) -> int:
+async def perform_cleanup_async(skip_paths: frozenset[str] | None = None, min_age: float = 0) -> int:
     """Async wrapper for perform_cleanup — offloads blocking I/O to a thread pool."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, perform_cleanup, skip_paths)
+    return await loop.run_in_executor(None, perform_cleanup, skip_paths, min_age)
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Application builder & Entry point
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    token = os.getenv("TOKEN")
-    if not token:
-        logger.error("TOKEN environment variable is not set")
-        raise SystemExit("TOKEN environment variable is required")
+async def stale_pref_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Answer callback queries for expired or unhandled preference buttons."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        try:
+            await query.edit_message_text("This menu has expired — send /preferences to start again.")
+        except Exception:
+            pass
 
-    allowed_chat_ids = get_allowed_chat_ids()
 
-    # Log configuration at startup for easy debugging
-    logger.info("NotaNext v%s starting...", VERSION)
-    logger.info(
-        "Configuration: CUPS_SERVER=%s  PRINTER_NAME=%s",
-        os.getenv("CUPS_SERVER", "(not set)"),
-        os.getenv("PRINTER_NAME", "(not set)"),
-    )
-    logger.info("Allowed chat IDs: %s", allowed_chat_ids or "ALL")
-
-    # Warn early if any CUPS binary is missing (won't prevent startup but commands will fail)
-    if not LP_BIN:
-        logger.warning("lp binary not found — printing will not work.")
-    if not LPSTAT_BIN:
-        logger.warning("lpstat binary not found — /status and /jobs will not work.")
-    if not CANCEL_BIN:
-        logger.warning("cancel binary not found — /cancel will not work.")
-
-    # Clean up any stale files from a previous run (sync — before event loop starts)
-    logger.info("Performing startup cleanup...")
-    perform_cleanup()
-
-    # Load persistent per-chat preferences (sync — before event loop starts)
-    load_preferences()
-
+def build_application(token: str, allowed_chat_ids: list[int]) -> Application:
+    """Build and configure the Telegram application with all handlers."""
     application = (
         ApplicationBuilder()
         .token(token)
@@ -1260,26 +1348,16 @@ def main() -> None:
     )
     application.add_error_handler(error_handler)
 
+    new_message = filters.UpdateType.MESSAGE
     if allowed_chat_ids:
-        chat_id_filter = filters.Chat(chat_id=allowed_chat_ids)
+        chat_id_filter = new_message & filters.Chat(chat_id=allowed_chat_ids)
     else:
         logger.warning(
             "ALLOWED_CHAT_IDS is not set — all Telegram users can print. "
             "Set this variable to restrict access."
         )
-        chat_id_filter = filters.ALL
+        chat_id_filter = new_message
 
-    # Preference-setting wizard — handles /start and /preferences.
-    # Both entry points are chat-filtered: saved profiles are a capped resource
-    # (MAX_PREFERENCES), so unrestricted access would let strangers exhaust it.
-    #
-    # The wizard walks one message through all three states via edit_message_text,
-    # so per_chat + per_user (the default) is the correct key — PTB's per_message=True
-    # is not an option here since it requires entry_points and fallbacks to also be
-    # CallbackQueryHandler, and ours (/start, /preferences, /cancel) are commands.
-    # That leaves PTB's "per_message=False" advisory with no applicable fix; it is
-    # expected for this — the standard command-entry, callback-state wizard — pattern
-    # and is suppressed rather than left to print on every startup.
     with warnings.catch_warnings():
         from telegram.warnings import PTBUserWarning
 
@@ -1299,11 +1377,13 @@ def main() -> None:
                 PREF_PAPER: [CallbackQueryHandler(pref_paper_callback, pattern="^pref_paper_")],
             },
             fallbacks=[CommandHandler("cancel", cancel_preferences)],
+            allow_reentry=True,
         )
     application.add_handler(pref_conv)
+    application.add_handler(CallbackQueryHandler(stale_pref_button, pattern="^pref_"))
 
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("help", help_command, filters=new_message))
+    application.add_handler(CommandHandler("status", status, filters=new_message))
 
     # Restricted commands and message handlers
     application.add_handler(CommandHandler("jobs", jobs_command, filters=chat_id_filter))
@@ -1342,6 +1422,42 @@ def main() -> None:
         )
     )
 
+    return application
+
+
+def main() -> None:
+    token = os.getenv("TOKEN")
+    if not token:
+        logger.error("TOKEN environment variable is not set")
+        raise SystemExit("TOKEN environment variable is required")
+
+    allowed_chat_ids = get_allowed_chat_ids()
+
+    # Log configuration at startup for easy debugging
+    logger.info("NotaNext v%s starting...", VERSION)
+    logger.info(
+        "Configuration: CUPS_SERVER=%s  PRINTER_NAME=%s",
+        os.getenv("CUPS_SERVER", "(not set)"),
+        os.getenv("PRINTER_NAME", "(not set)"),
+    )
+    logger.info("Allowed chat IDs: %s", allowed_chat_ids or "ALL")
+
+    # Warn early if any CUPS binary is missing (won't prevent startup but commands will fail)
+    if not LP_BIN:
+        logger.warning("lp binary not found — printing will not work.")
+    if not LPSTAT_BIN:
+        logger.warning("lpstat binary not found — /status and /jobs will not work.")
+    if not CANCEL_BIN:
+        logger.warning("cancel binary not found — /cancel will not work.")
+
+    # Clean up any stale files from a previous run (sync — before event loop starts)
+    logger.info("Performing startup cleanup...")
+    perform_cleanup()
+
+    # Load persistent per-chat preferences (sync — before event loop starts)
+    load_preferences()
+
+    application = build_application(token, allowed_chat_ids)
     application.run_polling()
 
 

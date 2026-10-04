@@ -25,6 +25,9 @@ RUN apt-get update && \
 
 WORKDIR /app
 
+# Create unprivileged system user for the bot runtime
+RUN useradd --system --uid 10001 --home /app notanext
+
 # Install Python dependencies
 COPY requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt

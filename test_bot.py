@@ -13,7 +13,7 @@ interpreter with nothing installed:
 import sys
 from unittest import mock
 
-for _name in ("httpx", "PIL", "PIL.Image", "pypdf", "telegram", "telegram.ext"):
+for _name in ("httpx", "telegram", "telegram.ext", "telegram.warnings"):
     sys.modules.setdefault(_name, mock.MagicMock())
 
 import bot  # noqa: E402
@@ -143,7 +143,7 @@ def test_version_matches_changelog():
     assert bot.VERSION == single_source_version, "bot.VERSION does not match VERSION file"
     assert f"## [{bot.VERSION}]" in changelog, "no CHANGELOG entry for VERSION"
     assert bot.VERSION in compose, "docker-compose.yml is pinned to another version"
-    assert f":{bot.VERSION}" in readme, "README.md does not reference current VERSION"
+    assert f"notanext:{bot.VERSION}" in readme, "README.md does not reference current VERSION"
     assert f"Version {bot.VERSION}" in spec, "docs/USER-SPEC.md documents another VERSION"
 
 

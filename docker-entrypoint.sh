@@ -32,16 +32,13 @@ if [ -n "${PRINTER_NAME:-}" ]; then
         echo "Waiting for CUPS server... ($i/10)"
         sleep 2
     done
-
-    echo "Setting default printer to: $PRINTER_NAME"
-    if lpoptions -d "$PRINTER_NAME" > /dev/null 2>&1; then
-        echo "Successfully set default printer."
-    else
-        echo "Warning: Could not set default printer to $PRINTER_NAME. Check if it exists on the server."
-    fi
 else
     echo "PRINTER_NAME not set, using CUPS server default."
 fi
 
-# Execute the application
-exec "$@"
+# Ensure data directory exists and is owned by notanext
+mkdir -p /app/data && chown -R notanext:notanext /app/data
+
+# Drop privileges and execute the application as user notanext
+export HOME=/app
+exec setpriv --reuid=notanext --regid=notanext --init-groups "$@"

@@ -1,6 +1,6 @@
 # NotaNext — User Specification
 
-What the bot does, from the user's side. Version 1.2.2.
+What the bot does, from the user's side. Version 1.3.0.
 
 Behaviour here is what `bot.py` actually implements; the constants named in
 brackets are the ones to grep for if you need to change a number.
@@ -42,9 +42,9 @@ real users out.
 | `/help` | The command and print-option reference. |
 | `/preferences` | The preferences wizard on its own. |
 | `/status` | Printer reachability — runs `lpstat -p` against the configured server. |
-| `/jobs` | The current CUPS queue — `lpstat -o`. |
-| `/cancel` | Cancels **all** print jobs — `cancel -a`. |
-| `/clean` | Deletes every cached file in the data directory, including anything queued in half mode. |
+| `/jobs` | The current CUPS queue for the configured printer — `lpstat -o <PRINTER_NAME>`. |
+| `/cancel` | Cancels all print jobs on the configured printer — `cancel -a <PRINTER_NAME>`. |
+| `/clean` | Deletes cached files in the data directory and clears your own half-mode queue. |
 
 `/cancel` means two things depending on context. While the preferences wizard is
 open it aborts the wizard; the reply then tells you to send it again to reach the
@@ -75,6 +75,8 @@ through; the slot is released again if the message turns out to hold no printabl
 file.
 
 For a photo, the largest available resolution is chosen.
+Edited messages are ignored: editing a photo caption or document after sending
+does not trigger a reprint.
 
 ---
 
@@ -127,6 +129,22 @@ reaches the printer, and the other formats cannot be merged. A `.docx` sent in
 half mode is refused at queue time with a pointer to `normal` mode — it is not
 silently printed full-page.
 
+**Queue cap**: up to 10 files [`MAX_HALF_QUEUE_FILES`] can wait in the queue.
+Sending an 11th file is rejected until the queue is printed with `print` or reset
+with `normal` / `/clean`.
+
+**Queue expiration**: a half queue expires after 30 minutes of inactivity
+[`SESSION_TTL`]. Expiration is enforced on use — sending a file after 30 minutes
+of inactivity automatically clears any stale queued files rather than pairing
+with them.
+
+**Half-mode limits and processing**:
+- **Page cap**: at most 50 pages total per merged print job [`MAX_MERGED_PAGES`].
+- **Pixel limits**: JPEGs up to 120 MP [`MAX_IMAGE_PIXELS`]; PNG and GIF up to 40 MP [`MAX_FULL_DECODE_PIXELS`].
+- **Downscaling**: images are downscaled to at most 3508 px on the long side (A4 at 300 DPI, [`PRINT_MAX_PX`]).
+- **Transparency**: transparent PNG and GIF images are composited onto a solid white background before merging.
+- **Resource protection**: merge execution runs in an isolated subprocess with a 384 MiB virtual address limit and a 60-second timeout [`MERGE_TIMEOUT`]. Complex or adversarial files exceeding these limits are safely aborted.
+
 Switching to `normal` **discards** anything still queued, and says how many files
 it dropped. Being rate-limited does not discard the queue: the files stay put and
 `print` retries them once the cooldown passes.
@@ -171,8 +189,7 @@ Grayscale sends two flags. Canon UFRII LT printers — the LBP7110Cw this was bu
 for — ignore the standard `ColorModel=Gray` and only respond to the proprietary
 `CNColorMode=mono`. Both are needed for the bot to work across printers.
 
-If `lp` fails, the reply carries the truncated CUPS error and the exact command
-that was run, so the failure can be reproduced by hand.
+If `lp` fails, the reply carries the truncated CUPS error to help diagnose the issue.
 
 ---
 
@@ -199,9 +216,11 @@ Everything lives under `data/`.
 - Downloaded files are deleted as soon as the job is submitted, whether the print
   succeeded or failed.
 - The merged PDF that half mode builds is deleted the same way.
-- A sweep every 6 hours drops leftovers, expired sessions and expired half
-  queues. Files still waiting in an active queue are protected from it.
-- `data/preferences.json` is never touched by any cleanup, including `/clean`.
+- In-flight files currently being downloaded, merged, or printed are explicitly tracked and protected from sweeps.
+- A sweep every 6 hours drops leftovers older than 30 minutes, expired sessions and expired half
+  queues. Files still waiting in an active queue or currently in flight are protected from it.
+- `data/preferences.json` and any quarantined `data/preferences.json.corrupt` are never touched by any cleanup, including `/clean`.
+- `/clean` deletes the calling chat's queued files and unreferenced cached files, leaving other chats' queues and active prints intact.
 - A cleanup also runs at startup, so a crash mid-print does not leave files
   behind forever.
 
@@ -222,20 +241,25 @@ Eight environment variables, all in `.env`. Nothing else configures the bot.
 | `HA_TOKEN` | no | Long-lived access token. Needs `HA_URL` too. |
 | `TZ` | no | Timezone for container log timestamps. Default UTC. |
 
-Values that are bounds rather than deployment settings are constants in `bot.py`,
-deliberately not variables: `SESSION_TTL` (1800s), `PRINT_COOLDOWN` (10s),
-`MAX_PREFERENCES` (10), `MAX_FILE_BYTES` (20 MB), `MAX_STDERR_LENGTH` (300
-characters of CUPS error echoed back to the chat).
+Values that are bounds rather than deployment settings are constants in
+`bot.py` and `merge_pdf.py`, deliberately not variables:
+`SESSION_TTL` (1800s), `PRINT_COOLDOWN` (10s), `MAX_PREFERENCES` (10),
+`MAX_FILE_BYTES` (20 MB), `MAX_HALF_QUEUE_FILES` (10),
+`CLEANUP_MIN_AGE_SECS` (60s), `MERGE_TIMEOUT` (60s), `MAX_MERGED_PAGES` (50),
+`MAX_IMAGE_PIXELS` (120 MP), `MAX_FULL_DECODE_PIXELS` (40 MP),
+`PRINT_MAX_PX` (3508 px), `MERGE_MEM_LIMIT_BYTES` (384 MiB),
+`MAX_STDERR_LENGTH` (300 characters of CUPS error echoed back to the chat).
 
 ---
 
 ## 12. Limits worth knowing
 
 - One CUPS printer per bot instance. No printer selection at runtime.
-- `/cancel` cancels the whole queue, not one job.
+- `/cancel` cancels all jobs on the configured printer, not one job.
 - Copies cap at 4, and only through the four keywords.
 - Paper is A4 or A5. Nothing else.
 - `number-up` is 1 or 2. There is no 4-up.
 - Preferences are per chat, so a group chat shares one profile.
 - Half mode pairs files in the order they arrive; there is no way to reorder or
   remove one file from the queue short of `normal`, which drops all of them.
+- Half mode queue is capped at 10 files and merged jobs are capped at 50 pages.

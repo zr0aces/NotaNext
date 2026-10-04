@@ -1,17 +1,19 @@
 services:
   notanext:
     # Pulls the pre-built image; `docker compose up -d --build` builds this tag locally.
-    image: ghcr.io/zr0aces/notanext:1.2.2
+    image: ghcr.io/zr0aces/notanext:1.3.0
     build:
       context: .
       args:
-        VERSION: "1.2.2"
+        VERSION: "1.3.0"
     container_name: notanext
     restart: always
     # All configuration comes from .env so that editing it actually takes
     # effect. A hardcoded `environment:` block would silently override env_file.
     env_file:
       - .env
+    security_opt:
+      - "no-new-privileges:true"
     deploy:
       resources:
         limits:

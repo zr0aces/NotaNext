@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import datetime
-import os
 import re
 import subprocess
 import sys
@@ -27,6 +26,15 @@ DOCKER_COMPOSE = ROOT_DIR / "docker-compose.yml"
 README_MD = ROOT_DIR / "README.md"
 CHANGELOG_MD = ROOT_DIR / "docs" / "CHANGELOG.md"
 USER_SPEC_MD = ROOT_DIR / "docs" / "USER-SPEC.md"
+
+VERSION_FILES = [
+    "VERSION",
+    "bot.py",
+    "docker-compose.yml",
+    "README.md",
+    "docs/CHANGELOG.md",
+    "docs/USER-SPEC.md",
+]
 
 SEMVER_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$")
 
@@ -198,7 +206,7 @@ def check_consistency() -> bool:
     if README_MD.exists():
         with open(README_MD, "r", encoding="utf-8") as f:
             text = f.read()
-        if f":{version}" not in text:
+        if f"notanext:{version}" not in text:
             errors.append(f"README.md does not reference {version!r}")
 
     # Check docs/CHANGELOG.md
@@ -225,15 +233,31 @@ def check_consistency() -> bool:
         return True
 
 
-def git_commit_and_tag(version: str) -> None:
-    """Create a git commit and annotated tag for the new version."""
+def check_staged_index() -> list[str]:
+    """Return list of staged files in git index."""
+    res = subprocess.run(
+        ["git", "diff", "--name-only", "--cached"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT_DIR,
+    )
+    return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+
+def git_commit(version: str) -> None:
+    """Create a git commit for the new version containing only version files."""
     commit_msg = f"chore: bump version to {version}"
+    print(f"\nCreating git commit for v{version}...")
+    subprocess.run(["git", "add", *VERSION_FILES], check=True, cwd=ROOT_DIR)
+    subprocess.run(["git", "commit", "-m", commit_msg], check=True, cwd=ROOT_DIR)
+
+
+def git_tag(version: str) -> None:
+    """Create an annotated git tag for the new version."""
     tag_name = f"v{version}"
     tag_msg = f"Release {tag_name}"
-
-    print(f"\nCreating git commit and tag {tag_name}...")
-    subprocess.run(["git", "add", "-A"], check=True, cwd=ROOT_DIR)
-    subprocess.run(["git", "commit", "-m", commit_msg], check=True, cwd=ROOT_DIR)
+    print(f"Creating git tag {tag_name}...")
     subprocess.run(["git", "tag", "-a", tag_name, "-m", tag_msg], check=True, cwd=ROOT_DIR)
     print(f"✓ Tagged {tag_name}")
 
@@ -245,14 +269,20 @@ def display_git_instructions(version: str, committed: bool = False, tagged: bool
     if tagged and committed:
         print("🚀 Release commit and tag created successfully!")
         print("Run the following command to push to remote and trigger GitHub Actions build:")
-        print(f"\n    git push origin master --tags")
+        print("\n    git push origin master --tags")
+        print(f"    # or: git push origin master && git push origin {tag_name}\n")
+    elif committed:
+        print("📌 Release commit created. Next steps to tag and push:")
+        print(f"\n    git tag -a {tag_name} -m \"Release {tag_name}\"")
+        print("    git push origin master --tags")
         print(f"    # or: git push origin master && git push origin {tag_name}\n")
     else:
         print("📌 Next steps to commit, tag, and push version update to git:")
-        print(f"\n    git add -A")
+        files_str = " ".join(VERSION_FILES)
+        print(f"\n    git add {files_str}")
         print(f"    git commit -m \"chore: bump version to {version}\"")
         print(f"    git tag -a {tag_name} -m \"Release {tag_name}\"")
-        print(f"    git push origin master --tags")
+        print("    git push origin master --tags")
         print(f"    # or: git push origin master && git push origin {tag_name}\n")
     print("─" * 60)
 
@@ -270,15 +300,20 @@ hints & examples:
   python3 scripts/bump_version.py patch --git-commit --git-tag  # Bump patch and create git tag vX.Y.Z
 """
 
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS, help="Preview changes without modifying files.")
+    common.add_argument("--git-commit", action="store_true", default=argparse.SUPPRESS, help="Create a git commit for the version bump.")
+    common.add_argument("--git-tag", action="store_true", default=argparse.SUPPRESS, help="Create an annotated git tag (vX.Y.Z).")
+
     parser = argparse.ArgumentParser(
         description="Automated version management tool for NotaNext (Single Source of Truth).\n"
                     "Default action: 'patch' (bumps patch version if no command is specified).",
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes without modifying files.")
-    parser.add_argument("--git-commit", action="store_true", help="Create a git commit for the version bump.")
-    parser.add_argument("--git-tag", action="store_true", help="Create an annotated git tag (vX.Y.Z).")
+    parser.add_argument("--dry-run", action="store_true", default=False, help="Preview changes without modifying files.")
+    parser.add_argument("--git-commit", action="store_true", default=False, help="Create a git commit for the version bump.")
+    parser.add_argument("--git-tag", action="store_true", default=False, help="Create an annotated git tag (vX.Y.Z).")
 
     subparsers = parser.add_subparsers(dest="command", help="Version command (default: patch)")
 
@@ -290,20 +325,15 @@ hints & examples:
 
     # patch / minor / major
     for bump_type in ("patch", "minor", "major"):
-        p = subparsers.add_parser(
+        subparsers.add_parser(
             bump_type,
+            parents=[common],
             help=f"Bump {bump_type} version component{' [DEFAULT]' if bump_type == 'patch' else ''}."
         )
-        p.add_argument("--dry-run", action="store_true", help="Preview changes without modifying files.")
-        p.add_argument("--git-commit", action="store_true", help="Create a git commit for the version bump.")
-        p.add_argument("--git-tag", action="store_true", help="Create an annotated git tag (vX.Y.Z).")
 
     # set <version>
-    p_set = subparsers.add_parser("set", help="Set an explicit semver version string (e.g. 1.3.0).")
+    p_set = subparsers.add_parser("set", parents=[common], help="Set an explicit semver version string (e.g. 1.3.0).")
     p_set.add_argument("version", help="Explicit semver version string.")
-    p_set.add_argument("--dry-run", action="store_true", help="Preview changes without modifying files.")
-    p_set.add_argument("--git-commit", action="store_true", help="Create a git commit for the version bump.")
-    p_set.add_argument("--git-tag", action="store_true", help="Create an annotated git tag (vX.Y.Z).")
 
     args = parser.parse_args()
 
@@ -320,6 +350,24 @@ hints & examples:
         ok = check_consistency()
         sys.exit(0 if ok else 1)
 
+    # If --git-tag is requested, it implies --git-commit
+    if do_tag:
+        do_commit = True
+
+    # Validate git index before making any changes if git operations are requested
+    if not dry_run and do_commit:
+        staged = check_staged_index()
+        version_files_set = set(VERSION_FILES)
+        unrelated = [f for f in staged if f not in version_files_set]
+        if unrelated:
+            print(
+                f"❌ Error: Git index contains unrelated staged files: {', '.join(unrelated)}.\n"
+                "Refusing automatic version commit/tag to avoid committing unrelated changes.\n"
+                "Commit or stash your changes first, or run without --git-commit/--git-tag.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Handle bumps
     current_ver = read_version()
     if cmd in ("patch", "minor", "major"):
@@ -332,12 +380,16 @@ hints & examples:
 
     sync_version(new_ver, dry_run=dry_run)
 
-    tagged_and_committed = False
-    if not dry_run and (do_commit or do_tag):
-        git_commit_and_tag(new_ver)
-        tagged_and_committed = True
+    committed = False
+    tagged = False
+    if not dry_run and do_commit:
+        git_commit(new_ver)
+        committed = True
+        if do_tag:
+            git_tag(new_ver)
+            tagged = True
 
-    display_git_instructions(new_ver, committed=tagged_and_committed, tagged=tagged_and_committed)
+    display_git_instructions(new_ver, committed=committed, tagged=tagged)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-NotaNext is a Telegram bot that forwards photos and documents to a CUPS-connected printer. Whole application is a single file, `bot.py`, built on `python-telegram-bot` 22.7 in long-polling mode. Everything else in the repo is deployment wrapping (Docker, systemd, GitHub Actions).
+NotaNext is a Telegram bot that forwards photos and documents to a CUPS-connected printer. Application core consists of `bot.py` plus `merge_pdf.py` run as an isolated child process, built on `python-telegram-bot` 22.8, `Pillow` 12.3.0, `pypdf` 6.19.0, and `httpx` 0.28.1 in long-polling mode. Everything else in the repo is deployment wrapping (Docker, systemd, GitHub Actions).
 
 ## Commands
 
@@ -77,22 +77,30 @@ lp -h $CUPS_SERVER -d $PRINTER_NAME -o fit-to-page -o media=A4|A5 \
 
 Two non-obvious behaviours here, both hard-won (see `docs/CHANGELOG.md`):
 
-- **Half mode always merges first.** Passing multiple files to `lp` with `number-up=2` does not work — CUPS splits them onto separate sheets. `merge_to_pdf()` (run via `asyncio.to_thread`) builds one PDF. Only images and PDFs can be merged, which is why `MERGEABLE_EXTENSIONS` is narrower than `PRINTABLE_EXTENSIONS`; unmergeable input is rejected at queue time, and `print_file` raises as a backstop rather than silently printing full-page. A *single* file in half mode gets a blank padded second page, otherwise drivers scale it to a full page.
+- **Half mode always merges first.** Passing multiple files to `lp` with `number-up=2` does not work — CUPS splits them onto separate sheets. `merge_pdf.py` is executed as an isolated child subprocess via `create_subprocess_exec` (with a 60s timeout, child kill/reap on timeout/cancel, and a 384 MiB virtual address limit `RLIMIT_AS`) to build one PDF. Running merge in a child keeps heavy imaging libraries out of the parent bot process; the child starts fast and can be killed cleanly without leaking memory or crashing the bot. `merge_pdf.py` must never import `bot`.
+  - **Decode order in `merge_pdf.py`**: JPEG `draft()` precedes EXIF transpose and conversion; thumbnailing to `PRINT_MAX_PX` (3508 px) precedes white-background flattening. Only images (JPEG up to 120 MP, PNG/GIF up to 40 MP) and PDFs (up to 50 pages total) can be merged. Transparent PNG/GIF images are composited onto a white canvas. A *single* file in half mode gets a blank padded second page, otherwise drivers scale it to a full page.
 - **Grayscale needs both flags.** Canon UFRII LT printers (the LBP7110Cw this was built for) ignore standard `ColorModel=Gray`; `CNColorMode=mono` is what actually takes effect. Keep both.
 
 ### Subprocess and I/O discipline
 
-Every CUPS call goes through `create_subprocess_exec` with an argument list — never a shell string. `run_cups_command()` and `print_file()` both do `kill()` + `await wait()` on timeout to reap the child. The Home Assistant webhook reuses one module-level `httpx.AsyncClient` (`get_ha_client()`), closed by the `post_shutdown` hook; `merge_to_pdf()` opens PDF inputs inside a `with` block because `PdfWriter.add_page()` clones eagerly. `/status`, `/jobs` and `/cancel` share `run_cups_query()`, which returns `(stdout, error_message)` with exactly one set; it owns the binary check, the `-h <server>` wiring, the timeout, and stderr truncation. `LP_BIN` / `LPSTAT_BIN` / `CANCEL_BIN` are resolved by `shutil.which` once at import.
+Every CUPS call and `merge_pdf.py` invocation goes through `create_subprocess_exec` with an argument list — never a shell string. `run_cups_command()` and `print_file()` both do `kill()` + `await wait()` on timeout to reap the child. The Home Assistant webhook reuses one module-level `httpx.AsyncClient` (`get_ha_client()`), closed by the `post_shutdown` hook. `/status`, `/jobs` and `/cancel` share `run_cups_query()`, which returns `(stdout, error_message)` with exactly one set; it owns the binary check, the `-h <server>` wiring, the timeout, and stderr truncation. `LP_BIN` / `LPSTAT_BIN` / `CANCEL_BIN` are resolved by `shutil.which` once at import.
+
+The merge subprocess establishes a fixed 384 MiB virtual address-space limit (`RLIMIT_AS`) on Linux, distinct from and well inside the container's 512 MB cgroup memory limit. This ensures runaway memory consumption is contained to the disposable child and will not crash the parent bot.
 
 Blocking filesystem work never runs directly in a handler — `perform_cleanup_async()` wraps `perform_cleanup()` in an executor. The sync version exists only for the pre-event-loop startup call in `main()`.
 
-Temporary files are cleaned in two places: the merged PDF in `print_file`'s `finally`, the downloaded originals in `_print_and_reply`'s. `perform_cleanup()` always preserves `PREFERENCES_FILE`, and the periodic sweep also preserves files still sitting in an active `half_queue`.
+File lifecycle and in-flight path tracking:
+- All active file paths (downloads in progress, flushes in flight, merged outputs, and atomic preferences writes) are registered in `in_flight_paths: set[str]` and protected from cleanup sweeps.
+- The queue-to-print handover transfers files synchronously into `in_flight_paths` before removing them from `half_queue`, and caller `finally` blocks guarantee release.
+- Temporary files are cleaned in two places: the merged PDF in `print_file`'s `finally`, the downloaded originals in `_print_and_reply`'s.
+- `perform_cleanup()` always preserves `PREFERENCES_FILE` and `CORRUPT_PREFERENCES_FILE`. Periodic sweeps preserve both in-flight paths and queued files, using `min_age` (60s for manual `/clean`, `SESSION_TTL` for periodic sweeps) as a supplementary snapshot-race guard.
 
 ### Handler registration order matters
 
-`main()` computes `chat_id_filter` first — it degrades to `filters.ALL` when `ALLOWED_CHAT_IDS` is unset, which is the open-to-the-world configuration and logs a warning at startup. Then it registers: `error_handler` (see below), the preferences `ConversationHandler`, `/help` and `/status`, the chat-filtered commands, and three `MessageHandler`s. `post_init` registers the bot command list and starts `cleanup_task()`; `post_shutdown` closes the shared HTTP client.
+`main()` delegates to `build_application()`. It computes `chat_id_filter` first (which degrades to `filters.ALL` when `ALLOWED_CHAT_IDS` is unset, logging a warning). All message handlers and `/help`/`/status` combine their filter with `filters.UpdateType.MESSAGE` to ignore edited messages (`edited_message`), preventing duplicate prints when users edit captions or messages. Then it registers: `error_handler` (see below), the preferences `ConversationHandler`, `/help` and `/status`, the chat-filtered commands, and three `MessageHandler`s. `post_init` registers the bot command list and starts `cleanup_task()`; `post_shutdown` closes the shared HTTP client.
 
 - Only `/help` and `/status` are unfiltered. **`/start` and `/preferences` are chat-filtered on purpose** — saved profiles are a capped resource (the `MAX_PREFERENCES` constant, 10), so an open wizard lets strangers exhaust it and lock out real users. Do not remove those filters.
+- The preferences `ConversationHandler` sets `allow_reentry=True` and registers `CallbackQueryHandler(stale_pref_button, pattern="^pref_")` as a fallback, gracefully informing users when they click stale buttons from expired wizard sessions.
 - `/cancel` is bound twice: as a `ConversationHandler` fallback (aborts the wizard) and as a top-level command (cancels CUPS jobs). Inside the wizard the fallback wins, so `cancel_preferences` tells the user to send it again for the print-queue meaning.
 - The TEXT handler catches every non-command message, so unrecognised text always produces the "Unknown option" reply. `handle_text_message()` treats `print` as an action keyword (flush the half queue) rather than a setting, and delegates keyword parsing to the pure `parse_option_tokens()` — put new keywords there, and add them to the `test_bot.py` documented-keyword list, `HELP_TEXT`, and the README table together.
 - A third `MessageHandler` (`unsupported_message`) catches everything the photo/document and text handlers don't — voice, video, stickers, animations, contacts, and so on — so those get a reply instead of vanishing with no feedback. It must stay registered last, after the two real handlers, since PTB stops at the first filter match per group.
@@ -122,7 +130,7 @@ The changelog is the project's design record — half-mode merging, the Canon co
 
 ## Deployment notes
 
-`docker-entrypoint.sh` writes `/etc/cups/client.conf` from `CUPS_SERVER`, then TCP-probes port 631 up to ten times (raw `/dev/tcp`, not HTTP — the CUPS web UI is often disabled on headless servers) before calling `lpoptions -d`. The compose file mounts `./data:/app/data`, which is what makes `preferences.json` survive container recreation.
+`docker-entrypoint.sh` writes `/etc/cups/client.conf` from `CUPS_SERVER`, TCP-probes port 631 up to ten times (raw `/dev/tcp`, not HTTP — the CUPS web UI is often disabled on headless servers), ensures `/app/data` is owned by `notanext:notanext`, and drops root privileges via `setpriv --reuid=notanext --regid=notanext --init-groups "$@"`. The container runs as non-root user `notanext` (UID 10001) with `no-new-privileges:true`. The compose file mounts `./data:/app/data`, which is what makes `preferences.json` survive container recreation.
 
 Configuration is deliberately small: `TOKEN`, `CUPS_SERVER`, `PRINTER_NAME`, `ALLOWED_CHAT_IDS`, `LOG_LEVEL`, `TZ`, and the `HA_URL`/`HA_TOKEN` pair. That is the whole surface. The preference cap (`MAX_PREFERENCES`) and the image tag are constants in `bot.py` and `docker-compose.yml`, not environment variables, because they are bounds rather than deployment settings — don't reintroduce a variable for a value that has one correct answer.
 

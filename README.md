@@ -3,8 +3,8 @@
 [![Release](https://img.shields.io/github/v/release/zr0aces/NotaNext)](https://github.com/zr0aces/NotaNext/releases)
 [![Docker Release](https://github.com/zr0aces/NotaNext/actions/workflows/docker-release.yml/badge.svg)](https://github.com/zr0aces/NotaNext/actions/workflows/docker-release.yml)
 [![Docker](https://img.shields.io/badge/ghcr.io-zr0aces%2Fnotanext-blue)](https://github.com/zr0aces/NotaNext/pkgs/container/notanext)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
-[![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.7-blue)](https://python-telegram-bot.org/)
+[![Python](https://img.shields.io/badge/python-3.10%20(Docker)-blue)](https://www.python.org/)
+[![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-22.8-blue)](https://python-telegram-bot.org/)
 
 ## Overview
 
@@ -98,6 +98,7 @@ docker compose up -d --build
 ```bash
 git clone https://github.com/zr0aces/NotaNext.git /home/pi/notanext
 cd /home/pi/notanext
+mkdir -p data
 pip install -r requirements.txt
 cp .env.example .env   # fill in TOKEN, CUPS_SERVER, PRINTER_NAME
 
@@ -107,7 +108,7 @@ sudo systemctl enable --now notanext.service
 sudo systemctl status notanext.service
 ```
 
-> **Note:** The `notanext.service` file assumes the user `pi` and path `/home/pi/notanext`. Adjust `User=` and `WorkingDirectory=` as needed.
+> **Note:** The `notanext.service` file assumes the user `pi` and path `/home/pi/notanext`. Adjust `User=` and `WorkingDirectory=` as needed. On Raspberry Pi OS Bookworm (PEP 668), installing into the system Python requires `pip install --break-system-packages -r requirements.txt` or a virtual environment with `ExecStart` pointed at its Python binary.
 
 #### Option C — Run directly
 
@@ -137,9 +138,9 @@ Once the bot is running, open it in Telegram and:
 | `/help` | List available commands | Everyone |
 | `/preferences` | Set persistent default print preferences (color/B&W, normal/half, A4/A5) | Allowed chat IDs only |
 | `/status` | Check printer availability via CUPS | Everyone |
-| `/jobs` | Show the current print queue | Allowed chat IDs only |
-| `/cancel` | Cancel all pending print jobs — or, while the `/preferences` wizard is open, abort the wizard | Allowed chat IDs only |
-| `/clean` | Delete cached downloaded files | Allowed chat IDs only |
+| `/jobs` | Show active jobs on this printer | Allowed chat IDs only |
+| `/cancel` | Cancel all jobs on this printer — or, while the `/preferences` wizard is open, abort the wizard | Allowed chat IDs only |
+| `/clean` | Delete cached files and clear your half-mode queue | Allowed chat IDs only |
 
 #### Default Preferences
 
@@ -194,7 +195,7 @@ Docker images are published automatically to [GitHub Container Registry](https:/
 docker pull ghcr.io/zr0aces/notanext:latest
 
 # Pin to a specific version
-docker pull ghcr.io/zr0aces/notanext:1.2.2
+docker pull ghcr.io/zr0aces/notanext:1.3.0
 ```
 
 Version bumps across all project files are automated from the single source of truth (`VERSION`):
@@ -212,11 +213,11 @@ See [docs/USER-SPEC.md](docs/USER-SPEC.md) for the full user-facing specificatio
 
 | Component | Version |
 |-----------|---------|
-| Python | 3.12 |
-| [python-telegram-bot](https://python-telegram-bot.org/) | 22.7 |
+| Python | 3.10 (Docker image) |
+| [python-telegram-bot](https://python-telegram-bot.org/) | 22.8 |
 | [httpx](https://www.python-httpx.org/) | 0.28.1 (async HTTP — Home Assistant webhook) |
-| [Pillow](https://python-pillow.org/) | 10.2.0 (image → PDF conversion for half mode) |
-| [pypdf](https://pypdf.readthedocs.io/) | 4.1.0 (PDF merging for half mode) |
+| [Pillow](https://python-pillow.org/) | 12.3.0 (image → PDF conversion for half mode) |
+| [pypdf](https://pypdf.readthedocs.io/) | 6.19.0 (PDF merging for half mode) |
 | CUPS client (`lp` / `lpstat` / `cancel`) | System package |
 | Docker base image | `ubuntu:22.04` |
 
