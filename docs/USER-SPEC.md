@@ -1,6 +1,6 @@
 # NotaNext — User Specification
 
-What the bot does, from the user's side. Version 1.3.0.
+What the bot does, from the user's side. Version 1.3.1.
 
 Behaviour here is what `bot.py` actually implements; the constants named in
 brackets are the ones to grep for if you need to change a number.
