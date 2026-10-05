@@ -120,6 +120,7 @@ python3 scripts/bump_version.py patch       # Bump patch (1.2.0 -> 1.2.1)
 python3 scripts/bump_version.py minor       # Bump minor (1.2.0 -> 1.3.0)
 python3 scripts/bump_version.py major       # Bump major (1.2.0 -> 2.0.0)
 python3 scripts/bump_version.py set 1.3.0   # Set specific version
+python3 scripts/print_tag_push.py           # Print git tag and push commands to run manually
 ```
 
 Flags like `--dry-run`, `--git-commit`, and `--git-tag` can be added to preview or automate git operations.

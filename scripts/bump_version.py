@@ -264,6 +264,14 @@ def git_tag(version: str) -> None:
 
 def display_git_instructions(version: str, committed: bool = False, tagged: bool = False) -> None:
     """Display git tag and push command instructions to update git and trigger releases."""
+    helper = Path(__file__).resolve().parent / "print_tag_push.py"
+    if helper.exists():
+        try:
+            subprocess.run([sys.executable, str(helper), version], cwd=ROOT_DIR)
+            return
+        except Exception:
+            pass
+
     tag_name = f"v{version}"
     print("\n" + "─" * 60)
     if tagged and committed:
