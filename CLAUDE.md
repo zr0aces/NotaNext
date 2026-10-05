@@ -150,3 +150,5 @@ Use the actual date when the plan is created.
 Use a clear, descriptive name for `plan-name`.
 
 Example: `2026-09-12-document-figures-alignment.md`
+
+When a plan is completed, move it to `docs/plans/completed/`.
