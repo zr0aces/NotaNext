@@ -140,7 +140,7 @@ with them.
 
 **Half-mode limits and processing**:
 - **Page cap**: at most 50 pages total per merged print job [`MAX_MERGED_PAGES`].
-- **Pixel limits**: JPEGs up to 120 MP [`MAX_IMAGE_PIXELS`]; PNG and GIF up to 40 MP [`MAX_FULL_DECODE_PIXELS`].
+- **Pixel limits**: JPEGs up to 48 MP [`MAX_IMAGE_PIXELS`]; PNG and GIF up to 12 MP [`MAX_FULL_DECODE_PIXELS`].
 - **Downscaling**: images are downscaled to at most 3508 px on the long side (A4 at 300 DPI, [`PRINT_MAX_PX`]).
 - **Transparency**: transparent PNG and GIF images are composited onto a solid white background before merging.
 - **Resource protection**: merge execution runs in an isolated subprocess with a 384 MiB virtual address limit and a 60-second timeout [`MERGE_TIMEOUT`]. Complex or adversarial files exceeding these limits are safely aborted.
@@ -219,8 +219,8 @@ Everything lives under `data/`.
 - In-flight files currently being downloaded, merged, or printed are explicitly tracked and protected from sweeps.
 - A sweep every 6 hours drops leftovers older than 30 minutes, expired sessions and expired half
   queues. Files still waiting in an active queue or currently in flight are protected from it.
-- `data/preferences.json` and any quarantined `data/preferences.json.corrupt` are never touched by any cleanup, including `/clean`.
-- `/clean` deletes the calling chat's queued files and unreferenced cached files, leaving other chats' queues and active prints intact.
+- `data/preferences.json` and any quarantined `data/preferences.json.corrupt` are never touched by any cleanup, including `/clean`. The fixed temporary preferences path (`data/preferences.json.tmp`) is explicitly skipped by runtime sweeps to prevent reuse races.
+- `/clean` deletes the calling chat's queued files and unreferenced cached files immediately (`min_age=0`), leaving other chats' queues and active prints intact.
 - A cleanup also runs at startup, so a crash mid-print does not leave files
   behind forever.
 
@@ -245,9 +245,9 @@ Values that are bounds rather than deployment settings are constants in
 `bot.py` and `merge_pdf.py`, deliberately not variables:
 `SESSION_TTL` (1800s), `PRINT_COOLDOWN` (10s), `MAX_PREFERENCES` (10),
 `MAX_FILE_BYTES` (20 MB), `MAX_HALF_QUEUE_FILES` (10),
-`CLEANUP_MIN_AGE_SECS` (60s), `MERGE_TIMEOUT` (60s), `MAX_MERGED_PAGES` (50),
-`MAX_IMAGE_PIXELS` (120 MP), `MAX_FULL_DECODE_PIXELS` (40 MP),
-`PRINT_MAX_PX` (3508 px), `MERGE_MEM_LIMIT_BYTES` (384 MiB),
+`MERGE_TIMEOUT` (60s), `MAX_MERGED_PAGES` (50),
+`MAX_IMAGE_PIXELS` (48 MP), `MAX_FULL_DECODE_PIXELS` (12 MP),
+`PRINT_MAX_PX` (3508 px), `MERGE_MEMORY_BYTES` (384 MiB),
 `MAX_STDERR_LENGTH` (300 characters of CUPS error echoed back to the chat).
 
 ---

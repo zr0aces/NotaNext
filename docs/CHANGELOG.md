@@ -5,27 +5,34 @@ All notable changes to this project will be documented in this file.
 ## [1.3.0] – 2026-10-05
 
 ### Added
-- **Dedicated merge child process** (`merge_pdf.py`): Isolated PDF and image merging into a standalone subprocess invoked with a 60-second timeout and Linux virtual address-space limit (`RLIMIT_AS` = 384 MiB) to protect the bot against unbounded memory growth or process crashes [F-01, F-02].
+- **Dedicated merge child process** (`merge_pdf.py`): Isolated PDF and image merging into a standalone subprocess invoked with a 60-second timeout and Linux virtual address-space limit (`RLIMIT_AS` = 384 MiB) to protect the bot against unbounded memory growth or process crashes [F-01, F-02]. CUPS client tools continue to execute directly on the host / container user; only PDF merging runs with resource bounds.
 - **Pure I/O test suite** (`scripts/check_io.py`): Comprehensive dependency-free regression test suite verifying subprocess argument vectors, preference persistence quarantine, cleanup age limits, in-flight path tracking, and disposable repository versioning [F-08, F-09, F-10, F-11, F-14].
 - **Runtime test suite** (`scripts/check_runtime.py`): Optional test suite exercising real `python-telegram-bot`, `Pillow`, and `pypdf` dependencies covering update filters, conversation re-entry, stale buttons, and image decode pipelines [F-01, F-03, F-04].
 - **CI release pipeline validation**: Added pre-build `check` job to `.github/workflows/docker-release.yml` executing pure self-checks, `check_io.py`, version validation, `pip-audit`, and runtime tests [F-15].
 
 ### Changed
 - **Dependency updates**: Upgraded `python-telegram-bot` to 22.8, `httpx` to 0.28.1, `Pillow` to 12.3.0, and `pypdf` to 6.19.0; removed heavy imaging libraries from parent `bot.py` process [F-01].
-- **Non-root container execution**: Created system user `notanext` (UID 10001) in `Dockerfile` and configured `docker-entrypoint.sh` to drop root privileges with `setpriv` after configuring CUPS and directory permissions [F-06].
+- **Non-root container execution**: Created system user `notanext` (UID 10001) in `Dockerfile` and configured `docker-entrypoint.sh` to drop root privileges with `setpriv` after creating `data` directory (`mkdir -p data`) and configuring CUPS and directory permissions (audit verified `MAX_PREFERENCES = 10` constant).
 - **Scoped CUPS commands**: `/jobs` and `/cancel` now target only the configured printer (`PRINTER_NAME`) rather than all printers on the CUPS server [F-09].
-- **Scoped `/clean` command**: Clears only the caller's queued files and unreferenced cached files older than 60 seconds, preserving other chats' queued files [F-11].
+- **Scoped `/clean` command**: Clears only the caller's queued files and unreferenced cached files immediately (`min_age=0`), preserving other chats' queued files [F-11].
 - **Docker Compose and image publishing**: Enabled `security_opt: ["no-new-privileges:true"]` in `docker-compose.yml`, dropped deprecated `lpoptions -d` command from entrypoint, added `.claude/` to `.dockerignore`, and set `flavor: latest=auto` in release workflow [F-07, F-15].
 - **Documentation refresh**: Synchronized command descriptions across `HELP_TEXT`, `README.md`, and `docs/USER-SPEC.md`, and documented Bookworm PEP 668 virtual environment steps [F-16].
+- **Optimized JPEG decode pipeline**: Reordered JPEG processing to run `draft()` followed immediately by `thumbnail((PRINT_MAX_PX, PRINT_MAX_PX))` prior to EXIF transposition and RGB conversion, eliminating intermediate memory spikes. Lowered admission caps to 48 MP for JPEG (`MAX_IMAGE_PIXELS`) and 12 MP for PNG/GIF (`MAX_FULL_DECODE_PIXELS`).
 
 ### Fixed — Security
-- **Image decode memory bounding**: Pillow decode pipeline now enforces JPEG `draft()` downscaling to 3508 px (`PRINT_MAX_PX`) before EXIF transposition and color conversion, checks header pixel bounds (`MAX_IMAGE_PIXELS` = 120 MP for JPEG, `MAX_FULL_DECODE_PIXELS` = 40 MP for PNG/GIF), and composites alpha channels onto a solid white background [F-02].
+- **Image decode memory bounding**: Pillow decode pipeline now enforces JPEG `draft()` downscaling and early thumbnailing to 3508 px (`PRINT_MAX_PX`) before EXIF transposition and color conversion, checks header pixel bounds (`MAX_IMAGE_PIXELS` = 48 MP for JPEG, `MAX_FULL_DECODE_PIXELS` = 12 MP for PNG/GIF), and composites alpha channels onto a solid white background [F-02].
+- **Subprocess lifecycle and zombie prevention**: Centralized child process communication in `_communicate_or_kill`, guaranteeing that timeouts or asyncio cancellations kill and reap subprocesses (`lp`, `lpstat`, `cancel`, `merge_pdf.py`) with shielded cleanup.
+- **Preferences background save worker**: Offloaded `save_preferences` in wizard callbacks to a shielded worker to prevent blocking the event loop on `fsync`, and ensured background tasks are drained before cancellation.
+- **Preferences temp file protection**: Explicitly excluded `preferences.json.tmp` from periodic cleanup sweeps, eliminating stat/unlink races during concurrent preference saves.
 - **Redacted internal commands in error replies**: Removed raw `lp` command string from user-facing error messages in Telegram replies, preventing exposure of internal file paths or server options [F-13].
 - **Preferences atomic write and quarantine**: Added file flush and `os.fsync` before renaming `preferences.json.tmp`, and quarantined malformed or invalid preference stores to `preferences.json.corrupt` without failing bot startup [F-10].
 
 ### Fixed
-- **Ignored edited Telegram messages**: Added `filters.UpdateType.MESSAGE` to `chat_id_filter` and top-level commands, preventing edited captions or messages (`edited_message`) from triggering accidental duplicate print jobs [F-03].
+- **Ignored edited Telegram messages**: Added `filters.UpdateType.MESSAGE` to `chat_id_filter`, top-level commands, and the preferences wizard `/cancel` fallback, preventing edited captions or messages (`edited_message`) from triggering accidental duplicate print jobs or aborting wizard sessions [F-03].
 - **Preferences wizard re-entry and stale buttons**: Enabled `allow_reentry=True` on `ConversationHandler` and added fallback callback query handler to gracefully inform users when clicking expired inline buttons [F-04].
+- **Pre-merge configuration validation**: Verified `CUPS_SERVER` and `PRINTER_NAME` at the entry of `print_file` before launching `merge_pdf.py`, avoiding orphaned merge outputs when configuration is missing.
+- **Safe queue discard in `/clean`**: Replaced fragile inline pop-and-remove loop with `discard_half_queue`, guaranteeing complete per-chat queue and file cleanup.
+- **Strict boolean pad flag**: In `merge_pdf.py`, pad flag evaluation strictly checks `sys.argv[2] == "1"`.
 - **Half-mode limits and expiration**: Enforced a 10-file queue cap (`MAX_HALF_QUEUE_FILES`), a 50-page cap on merged PDF documents (`MAX_MERGED_PAGES`), and 30-minute queue expiration on use [F-05, F-11].
 - **In-flight file race prevention**: Added explicit `in_flight_paths` tracking for active downloads, merges, and prints to prevent concurrent periodic cleanup sweeps from removing files in use [F-08].
 - **Plain-text error replies**: `_get_file_info` now replies with plain text without `parse_mode="Markdown"` when rejecting unsupported files, preventing parse failures on filenames with special characters [F-12].

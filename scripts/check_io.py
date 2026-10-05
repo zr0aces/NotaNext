@@ -6,11 +6,13 @@ and mocks without touching real data, live Telegram, or CUPS servers.
 """
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -276,7 +278,7 @@ def test_perform_cleanup_min_age():
 
 
 def test_in_flight_ownership_and_periodic_sweep():
-    """In-flight paths survive the periodic sweep regardless of age."""
+    """In-flight paths survive the periodic sweep regardless of age through real flush and sweep."""
     with tempfile.TemporaryDirectory() as tmpdir:
         pref = os.path.join(tmpdir, "preferences.json")
         Path(pref).write_text("{}")
@@ -288,41 +290,194 @@ def test_in_flight_ownership_and_periodic_sweep():
         os.utime(input_file, (past_time, past_time))
 
         chat_id = 42
+        bot.last_print_time.pop(chat_id, None)
         bot.half_queue[chat_id] = HalfQueueEntry(
             files=[input_file],
             ts=time.monotonic(),  # active queue
         )
 
-        with mock.patch("bot.DATA_DIR", tmpdir), \
-             mock.patch("bot.PREFERENCES_FILE", pref), \
-             mock.patch("bot.CORRUPT_PREFERENCES_FILE", os.path.join(tmpdir, "preferences.json.corrupt")):
+        in_communicate = asyncio.Event()
+        release_merge = asyncio.Event()
 
-            # Simulate flush beginning: register in in_flight_paths, then pop queue
-            entry = bot.half_queue.get(chat_id)
-            files = list(entry.files)
-            bot.in_flight_paths.update(files)
+        class PausingMergeProcess:
+            def __init__(self, cmd):
+                self.cmd = cmd
+                self.returncode = 0
+                merged_out = cmd[2]
+                Path(merged_out).write_text("merged content")
+
+            async def communicate(self):
+                in_communicate.set()
+                await release_merge.wait()
+                return b"", b""
+
+            def kill(self):
+                pass
+
+            async def wait(self):
+                return 0
+
+        class DummyLpProcess:
+            def __init__(self, cmd):
+                self.returncode = 0
+
+            async def communicate(self):
+                return b"OK", b""
+
+            def kill(self):
+                pass
+
+            async def wait(self):
+                return 0
+
+        async def fake_subproc(*cmd, **kwargs):
+            if "merge_pdf.py" in cmd[1]:
+                return PausingMergeProcess(list(cmd))
+            return DummyLpProcess(list(cmd))
+
+        fake_update = mock.MagicMock()
+        fake_update.effective_message.reply_text = mock.AsyncMock()
+        fake_context = mock.MagicMock()
+        opts = PrintOptions(number_up=2)
+
+        orig_lp = bot.LP_BIN
+        orig_server = os.environ.get("CUPS_SERVER")
+        orig_printer = os.environ.get("PRINTER_NAME")
+        bot.LP_BIN = "lp"
+        os.environ["CUPS_SERVER"] = "test-server"
+        os.environ["PRINTER_NAME"] = "test-printer"
+
+        async def run_test():
+            with mock.patch("bot.DATA_DIR", tmpdir), \
+                 mock.patch("bot.PREFERENCES_FILE", pref), \
+                 mock.patch("bot.CORRUPT_PREFERENCES_FILE", os.path.join(tmpdir, "preferences.json.corrupt")), \
+                 mock.patch("asyncio.create_subprocess_exec", side_effect=fake_subproc):
+
+                flush_task = asyncio.create_task(
+                    bot._flush_half_queue(fake_update, fake_context, chat_id, opts)
+                )
+                try:
+                    await asyncio.wait_for(in_communicate.wait(), timeout=5.0)
+
+                    assert chat_id not in bot.half_queue
+                    assert input_file in bot.in_flight_paths
+
+                    await bot._sweep_once(time.monotonic())
+
+                    assert os.path.exists(input_file)
+
+                    release_merge.set()
+                    await asyncio.wait_for(flush_task, timeout=5.0)
+
+                    assert not os.path.exists(input_file)
+                    assert len(bot.in_flight_paths) == 0
+                finally:
+                    release_merge.set()
+                    if not flush_task.done():
+                        flush_task.cancel()
+                        try:
+                            await flush_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+
+        try:
+            run_async(run_test())
+        finally:
+            bot.LP_BIN = orig_lp
+            if orig_server is not None:
+                os.environ["CUPS_SERVER"] = orig_server
+            else:
+                os.environ.pop("CUPS_SERVER", None)
+            if orig_printer is not None:
+                os.environ["PRINTER_NAME"] = orig_printer
+            else:
+                os.environ.pop("PRINTER_NAME", None)
             bot.half_queue.pop(chat_id, None)
+            bot.last_print_time.pop(chat_id, None)
+            bot.in_flight_paths.clear()
 
-            # While flush is in-flight, run periodic sweep
-            active_files = {fp for q in bot.half_queue.values() for fp in q.files}
-            skip_set = frozenset(active_files | bot.in_flight_paths)
-            removed = perform_cleanup(skip_paths=skip_set, min_age=bot.SESSION_TTL)
 
-            # The input file MUST survive despite being older than SESSION_TTL
-            assert removed == 0
-            assert os.path.exists(input_file)
+def test_download_tracked_failure():
+    """Verify partial file removal and in_flight_paths release on download failure and cancellation."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with mock.patch("bot.DATA_DIR", tmpdir):
+            class FailingDownloadFile:
+                def __init__(self, exc):
+                    self.exc = exc
+                    self.created_path = None
 
-            # Cleanup release
-            for fp in files:
-                bot.in_flight_paths.discard(fp)
-                os.remove(fp)
+                async def download_to_drive(self, path):
+                    self.created_path = path
+                    Path(path).write_text("partial download")
+                    raise self.exc
 
-            assert not os.path.exists(input_file)
+            # 1. Regular exception
+            file_err = FailingDownloadFile(IOError("Network disconnected"))
+            try:
+                run_async(bot._download_tracked(file_err, ".pdf"))
+                assert False, "Expected IOError"
+            except IOError as e:
+                assert "Network disconnected" in str(e)
+
+            assert file_err.created_path is not None
+            assert not os.path.exists(file_err.created_path)
+            assert file_err.created_path not in bot.in_flight_paths
+            assert len(bot.in_flight_paths) == 0
+
+            # 2. CancelledError
+            file_cancel = FailingDownloadFile(asyncio.CancelledError())
+            try:
+                run_async(bot._download_tracked(file_cancel, ".jpg"))
+                assert False, "Expected CancelledError"
+            except asyncio.CancelledError:
+                pass
+
+            assert file_cancel.created_path is not None
+            assert not os.path.exists(file_cancel.created_path)
+            assert file_cancel.created_path not in bot.in_flight_paths
             assert len(bot.in_flight_paths) == 0
 
 
+def test_config_failure_before_merge():
+    """Missing PRINTER_NAME fails before merge child or lp subprocess is started."""
+    orig_lp = bot.LP_BIN
+    orig_printer = os.environ.get("PRINTER_NAME")
+    orig_server = os.environ.get("CUPS_SERVER")
+    bot.LP_BIN = "lp"
+    os.environ["CUPS_SERVER"] = "test-server"
+    os.environ.pop("PRINTER_NAME", None)
+
+    started_subprocs = []
+
+    async def fake_subproc(*cmd, **kwargs):
+        started_subprocs.append(list(cmd))
+        raise RuntimeError("Subprocess should not be started!")
+
+    try:
+        with mock.patch("asyncio.create_subprocess_exec", side_effect=fake_subproc):
+            opts = PrintOptions(number_up=2)
+            try:
+                run_async(print_file(["/tmp/file1.pdf", "/tmp/file2.pdf"], opts))
+                assert False, "Expected RuntimeError for missing PRINTER_NAME"
+            except RuntimeError as e:
+                assert "PRINTER_NAME" in str(e)
+
+        # Assert no subprocess at all was started
+        assert len(started_subprocs) == 0, f"Subprocesses were started: {started_subprocs}"
+    finally:
+        bot.LP_BIN = orig_lp
+        if orig_printer is not None:
+            os.environ["PRINTER_NAME"] = orig_printer
+        else:
+            os.environ.pop("PRINTER_NAME", None)
+        if orig_server is not None:
+            os.environ["CUPS_SERVER"] = orig_server
+        else:
+            os.environ.pop("CUPS_SERVER", None)
+
+
 def test_merge_lifecycle_and_cleanup():
-    """Verify merged output removal, child reap, and registration release on failure."""
+    """Verify merged output removal, child reap, registration release, and no lp on failure."""
     with tempfile.TemporaryDirectory() as tmpdir:
         pref = os.path.join(tmpdir, "preferences.json")
         Path(pref).write_text("{}")
@@ -336,6 +491,7 @@ def test_merge_lifecycle_and_cleanup():
         os.environ["PRINTER_NAME"] = "test-printer"
 
         created_merged = []
+        started_cmds = []
         fake_proc = None
 
         class PartialOutputProcess:
@@ -361,9 +517,11 @@ def test_merge_lifecycle_and_cleanup():
 
             async def wait(self):
                 self.waited = True
+                return 0
 
         async def fake_failing_subprocess(*cmd, **kwargs):
             nonlocal fake_proc
+            started_cmds.append(list(cmd))
             fake_proc = PartialOutputProcess(list(cmd), failure_type=current_failure)
             return fake_proc
 
@@ -376,6 +534,7 @@ def test_merge_lifecycle_and_cleanup():
 
             # 1. Error during merge
             current_failure = "error"
+            started_cmds.clear()
             try:
                 run_async(print_file(["/tmp/in1.jpg", "/tmp/in2.jpg"], opts))
                 assert False, "Expected error"
@@ -383,9 +542,11 @@ def test_merge_lifecycle_and_cleanup():
                 assert "Merge syntax error" in str(e)
             assert not os.path.exists(created_merged[-1]), "Partial output was not removed"
             assert len(bot.in_flight_paths) == 0
+            assert not any("lp" == c[0] for c in started_cmds), "lp must not be called after merge error"
 
             # 2. Timeout during merge
             current_failure = "timeout"
+            started_cmds.clear()
             try:
                 run_async(print_file(["/tmp/in1.jpg", "/tmp/in2.jpg"], opts))
                 assert False, "Expected timeout"
@@ -395,8 +556,29 @@ def test_merge_lifecycle_and_cleanup():
             assert fake_proc.waited is True
             assert not os.path.exists(created_merged[-1]), "Partial output was not removed on timeout"
             assert len(bot.in_flight_paths) == 0
+            assert not any("lp" == c[0] for c in started_cmds), "lp must not be called after merge timeout"
 
-            # 3. Subprocess launch failure after merged_path created
+            # 3. Cancellation during merge
+            current_failure = "cancel"
+            started_cmds.clear()
+
+            async def run_cancel():
+                task = asyncio.create_task(print_file(["/tmp/in1.jpg", "/tmp/in2.jpg"], opts))
+                await asyncio.sleep(0.01)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+            run_async(run_cancel())
+            assert fake_proc.killed is True
+            assert fake_proc.waited is True
+            assert not os.path.exists(created_merged[-1]), "Partial output was not removed on cancel"
+            assert len(bot.in_flight_paths) == 0
+            assert not any("lp" == c[0] for c in started_cmds), "lp must not be called after merge cancellation"
+
+            # 4. Subprocess launch failure after merged_path created
             async def launch_fails(*cmd, **kwargs):
                 raise OSError("Launch failed")
 
@@ -417,6 +599,195 @@ def test_merge_lifecycle_and_cleanup():
             os.environ.pop("PRINTER_NAME", None)
         else:
             os.environ["PRINTER_NAME"] = orig_printer
+
+
+def test_preference_worker_and_temp_path_protection():
+    """Verify runtime temp-path protection, startup cleanup of stale temp, and worker drain on cancel."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pref = os.path.join(tmpdir, "preferences.json")
+        pref_tmp = pref + ".tmp"
+
+        # 1. Startup perform_cleanup removes a stale .tmp file
+        Path(pref_tmp).write_text("stale temp from crash")
+        with mock.patch("bot.DATA_DIR", tmpdir), \
+             mock.patch("bot.PREFERENCES_FILE", pref), \
+             mock.patch("bot.CORRUPT_PREFERENCES_FILE", os.path.join(tmpdir, "preferences.json.corrupt")):
+            removed = perform_cleanup(min_age=0)
+            assert removed == 1
+            assert not os.path.exists(pref_tmp)
+
+        # 2. Pre-create an old temp file to exercise reuse race
+        Path(pref_tmp).write_text("pre-existing old temp")
+        past_time = time.time() - 10000
+        os.utime(pref_tmp, (past_time, past_time))
+
+        fsync_started = threading.Event()
+        fsync_release = threading.Event()
+        orig_fsync = os.fsync
+
+        def pausing_fsync(fd):
+            fsync_started.set()
+            fsync_release.wait()
+            orig_fsync(fd)
+
+        async def run_protection_and_cancellation():
+            with mock.patch("bot.DATA_DIR", tmpdir), \
+                 mock.patch("bot.PREFERENCES_FILE", pref), \
+                 mock.patch("bot.CORRUPT_PREFERENCES_FILE", os.path.join(tmpdir, "preferences.json.corrupt")), \
+                 mock.patch("os.fsync", side_effect=pausing_fsync):
+
+                bot.user_preferences.clear()
+                bot.user_preferences["12345"] = PrintOptions(color=False, copies=2)
+
+                fake_query = mock.MagicMock()
+                fake_query.answer = mock.AsyncMock()
+                fake_query.data = "pref_paper_A4"
+                fake_query.edit_message_text = mock.AsyncMock()
+
+                fake_update = mock.MagicMock()
+                fake_update.callback_query = fake_query
+                fake_update.effective_chat.id = 12345
+
+                fake_context = mock.MagicMock()
+                fake_context.user_data = {"pref_draft": PrintOptions(color=False, copies=2)}
+
+                handler_task = asyncio.create_task(
+                    bot.pref_paper_callback(fake_update, fake_context)
+                )
+
+                # Wait until worker reaches fsync
+                while not fsync_started.is_set():
+                    await asyncio.sleep(0.01)
+
+                # Now run real _sweep_once. The temp file MUST survive because it is in skip paths
+                await bot._sweep_once(time.monotonic())
+                assert os.path.exists(pref_tmp)
+
+                # Cancel the handler task while worker is still paused
+                handler_task.cancel()
+
+                # Yield to let cancellation propagate into the handler.
+                # Because handler shields and drains worker, it must NOT finish yet!
+                await asyncio.sleep(0.05)
+                assert not handler_task.done(), "Handler should not finish until worker is released"
+
+                # Release the worker
+                fsync_release.set()
+
+                # Now handler task should finish and raise CancelledError
+                try:
+                    await asyncio.wait_for(handler_task, timeout=5.0)
+                    assert False, "Handler should have raised CancelledError"
+                except asyncio.CancelledError:
+                    pass
+
+                # Verify preferences were saved and file is intact
+                assert os.path.exists(pref)
+                with open(pref) as f:
+                    saved = json.load(f)
+                assert "12345" in saved
+                assert saved["12345"]["color"] is False
+
+        try:
+            run_async(run_protection_and_cancellation())
+        finally:
+            fsync_release.set()
+            bot.user_preferences.clear()
+
+
+def test_subprocess_teardown_races():
+    """Verify _communicate_or_kill handles ProcessLookupError, cancellation during wait, and distinct caller errors."""
+    # 1. ProcessLookupError on kill()
+    class ExitedProcess:
+        def __init__(self):
+            self.waited = False
+            self.returncode = 0
+
+        async def communicate(self):
+            raise asyncio.TimeoutError()
+
+        def kill(self):
+            raise ProcessLookupError("No such process")
+
+        async def wait(self):
+            self.waited = True
+            return 0
+
+    proc = ExitedProcess()
+    try:
+        run_async(bot._communicate_or_kill(proc, timeout=0.1))
+        assert False, "Expected TimeoutError"
+    except asyncio.TimeoutError:
+        pass
+    assert proc.waited is True
+
+    # 2. Cancellation during wait()
+    class SlowWaitProcess:
+        def __init__(self):
+            self.killed = False
+            self.wait_event = asyncio.Event()
+            self.returncode = None
+
+        async def communicate(self):
+            raise asyncio.TimeoutError()
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            await self.wait_event.wait()
+            self.returncode = 0
+            return 0
+
+    proc_slow = SlowWaitProcess()
+
+    async def run_slow_wait():
+        task = asyncio.create_task(bot._communicate_or_kill(proc_slow, timeout=0.01))
+        for _ in range(50):
+            if proc_slow.killed:
+                break
+            await asyncio.sleep(0.005)
+        assert proc_slow.killed is True
+        task.cancel()
+        await asyncio.sleep(0.01)
+        proc_slow.wait_event.set()
+        try:
+            await task
+            assert False, "Expected TimeoutError"
+        except asyncio.TimeoutError:
+            pass
+
+    run_async(run_slow_wait())
+    assert proc_slow.killed is True
+    assert proc_slow.returncode == 0
+
+    # 3. Verify distinct timeout errors:
+    orig_lpstat = bot.LPSTAT_BIN
+    orig_server = os.environ.get("CUPS_SERVER")
+    bot.LPSTAT_BIN = "lpstat"
+    os.environ["CUPS_SERVER"] = "test-server"
+
+    async def fake_timing_out_exec(*cmd, **kwargs):
+        class TimingOutProc:
+            async def communicate(self):
+                raise asyncio.TimeoutError()
+            def kill(self):
+                pass
+            async def wait(self):
+                return 0
+        return TimingOutProc()
+
+    try:
+        with mock.patch("asyncio.create_subprocess_exec", side_effect=fake_timing_out_exec):
+            stdout, err = run_async(bot.run_cups_query("lpstat", "lpstat", ["-p"], "Printer status check"))
+            assert stdout is None
+            assert err == "⚠️ Printer status check timed out."
+    finally:
+        bot.LPSTAT_BIN = orig_lpstat
+        if orig_server is not None:
+            os.environ["CUPS_SERVER"] = orig_server
+        else:
+            os.environ.pop("CUPS_SERVER", None)
 
 
 def test_version_cli_in_disposable_repo():
@@ -515,6 +886,10 @@ if __name__ == "__main__":
         test_perform_cleanup_min_age,
         test_in_flight_ownership_and_periodic_sweep,
         test_merge_lifecycle_and_cleanup,
+        test_download_tracked_failure,
+        test_config_failure_before_merge,
+        test_preference_worker_and_temp_path_protection,
+        test_subprocess_teardown_races,
         test_version_cli_in_disposable_repo,
     ]
 

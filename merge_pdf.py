@@ -15,8 +15,8 @@ import warnings
 MERGE_MEMORY_BYTES = 384 * 1024 * 1024  # 384 MiB virtual address space bound
 MAX_MERGED_PAGES = 50
 PRINT_MAX_PX = 3508  # Long side of A4 at 300 DPI
-MAX_IMAGE_PIXELS = 120_000_000
-MAX_FULL_DECODE_PIXELS = 40_000_000
+MAX_IMAGE_PIXELS = 48_000_000
+MAX_FULL_DECODE_PIXELS = 12_000_000
 
 
 def merge_to_pdf(file_paths: list[str], output_path: str, pad_for_half: bool = False) -> None:
@@ -49,13 +49,14 @@ def merge_to_pdf(file_paths: list[str], output_path: str, pad_for_half: bool = F
     for fp in file_paths:
         ext = os.path.splitext(fp)[1].lower()
         if ext in ('.jpg', '.jpeg', '.png', '.gif'):
-            with Image.open(fp, formats=["JPEG", "PNG", "GIF"]) as img:
-                w, h = img.size
+            with Image.open(fp, formats=["JPEG", "PNG", "GIF"]) as raw_img:
+                w, h = raw_img.size
                 total_pixels = w * h
-                if img.format in ("PNG", "GIF") and total_pixels > MAX_FULL_DECODE_PIXELS:
+                fmt = raw_img.format
+                if fmt in ("PNG", "GIF") and total_pixels > MAX_FULL_DECODE_PIXELS:
                     raise RuntimeError(
                         f"Image {os.path.basename(fp)} too large ({total_pixels} pixels). "
-                        f"Maximum supported for {img.format} is {MAX_FULL_DECODE_PIXELS} pixels."
+                        f"Maximum supported for {fmt} is {MAX_FULL_DECODE_PIXELS} pixels."
                     )
                 if total_pixels > MAX_IMAGE_PIXELS:
                     raise RuntimeError(
@@ -63,34 +64,49 @@ def merge_to_pdf(file_paths: list[str], output_path: str, pad_for_half: bool = F
                         f"Maximum supported is {MAX_IMAGE_PIXELS} pixels."
                     )
 
-                # JPEG draft downscaling: request aspect-preserving size only if f < 1
-                max_dim = max(w, h)
-                f = PRINT_MAX_PX / max_dim if max_dim > 0 else 1.0
-                if img.format == "JPEG" and f < 1.0:
-                    img.draft("RGB", (math.ceil(w * f), math.ceil(h * f)))
+                img = raw_img
+                if fmt == "JPEG":
+                    # JPEG draft downscaling: request aspect-preserving size only if f < 1
+                    max_dim = max(w, h)
+                    f = PRINT_MAX_PX / max_dim if max_dim > 0 else 1.0
+                    if f < 1.0:
+                        img.draft("RGB", (math.ceil(w * f), math.ceil(h * f)))
 
-                # Transpose EXIF orientation after draft
-                img = ImageOps.exif_transpose(img)
+                    # Thumbnail immediately after draft, before EXIF transpose & RGB conversion
+                    img.thumbnail((PRINT_MAX_PX, PRINT_MAX_PX))
 
-                # Convert transparency to RGBA, otherwise RGB
-                is_transparent = (img.mode in ("RGBA", "LA")) or ("transparency" in img.info)
-                img = img.convert("RGBA") if is_transparent else img.convert("RGB")
+                    # Transpose EXIF orientation after thumbnail
+                    img = ImageOps.exif_transpose(img)
 
-                # Thumbnail to PRINT_MAX_PX before white canvas flattening
-                img.thumbnail((PRINT_MAX_PX, PRINT_MAX_PX))
+                    # Ensure RGB mode (e.g. CMYK JPEGs)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                else:
+                    # Non-JPEG (PNG / GIF): EXIF transpose before conversion and thumbnailing
+                    img = ImageOps.exif_transpose(img)
 
-                # Composite RGBA onto white background
-                if img.mode == "RGBA":
-                    bg = Image.new("RGB", img.size, (255, 255, 255))
-                    bg.paste(img, (0, 0), img)
-                    img.close()
-                    img = bg
+                    # Convert transparency to RGBA, otherwise RGB
+                    is_transparent = (img.mode in ("RGBA", "LA")) or ("transparency" in img.info)
+                    img = img.convert("RGBA") if is_transparent else img.convert("RGB")
 
-                img_pdf = io.BytesIO()
-                img.save(img_pdf, format="PDF")
-                img.close()
-                img_pdf.seek(0)
-                _add_pages_from_reader(PdfReader(img_pdf))
+                    # Thumbnail to PRINT_MAX_PX before white canvas flattening
+                    img.thumbnail((PRINT_MAX_PX, PRINT_MAX_PX))
+
+                    # Composite RGBA onto white background
+                    if img.mode == "RGBA":
+                        bg = Image.new("RGB", img.size, (255, 255, 255))
+                        bg.paste(img, (0, 0), img)
+                        img.close()
+                        img = bg
+
+                try:
+                    img_pdf = io.BytesIO()
+                    img.save(img_pdf, format="PDF")
+                    img_pdf.seek(0)
+                    _add_pages_from_reader(PdfReader(img_pdf))
+                finally:
+                    if img is not raw_img:
+                        img.close()
 
         elif ext == '.pdf':
             # add_page() clones eagerly, so the handle can close once the loop ends.
@@ -112,7 +128,7 @@ def main() -> None:
         sys.exit(1)
 
     output_path = sys.argv[1]
-    pad_for_half = sys.argv[2] in ("1", "true", "True")
+    pad_for_half = sys.argv[2] == "1"
     inputs = sys.argv[3:]
 
     try:

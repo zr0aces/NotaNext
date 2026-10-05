@@ -182,7 +182,7 @@ Half mode also changes the workflow: files are **queued** rather than printed im
 - Send `print` at any time → whatever is queued prints now. A lone file is padded with a blank half so it still lands on half a sheet.
 - Send `normal` → half mode is switched off and any queued files are discarded.
 
-Because half mode merges files into a single PDF, it only accepts images and PDFs (`.gif`, `.jpeg`, `.jpg`, `.pdf`, `.png`). Send `normal` first to print a `.docx`, `.odt`, `.txt` or `.ps`.
+Because half mode merges files into a single PDF, it only accepts images and PDFs (`.gif`, `.jpeg`, `.jpg`, `.pdf`, `.png`). Send `normal` first to print a `.docx`, `.odt`, `.txt` or `.ps`. Half mode enforces safe admission limits: up to 10 files queued per chat, at most 50 pages per merged print job, JPEGs up to 48 MP, and PNG/GIF images up to 12 MP.
 
 ---
 
@@ -225,16 +225,11 @@ See [docs/USER-SPEC.md](docs/USER-SPEC.md) for the full user-facing specificatio
 > `pip install pip-tools && pip-compile --generate-hashes requirements.txt`
 > and commit the resulting `requirements.txt` lockfile.
 
-### Self-check
+### Self-check and Tests
 
-`test_bot.py` covers the pure logic — print-option parsing, the preference
-persistence round-trip, the half-mode extension gate, and version consistency
-between `bot.py`, `docker-compose.yml` and the changelog. It stubs the
-third-party imports, so it needs nothing installed:
-
-```bash
-python3 test_bot.py
-```
+- `python3 test_bot.py`: Pure logic self-check (print-option parsing, preference persistence round-trip, half-mode extension gate, version consistency across all files). Stubs third-party imports and runs on a bare interpreter.
+- `python3 scripts/check_io.py`: Subprocess argument vectors, preference persistence quarantine and async offload, in-flight path tracking, and cleanup races with fakes (bare interpreter).
+- `python3 scripts/check_runtime.py`: Tests real PTB handler filters, conversation re-entry mid-wizard, and Pillow/pypdf merge, downscaling, and memory limits (requires `requirements.txt`).
 
 ---
 

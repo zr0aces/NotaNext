@@ -368,7 +368,6 @@ def load_preferences() -> None:
 def save_preferences() -> None:
     """Persist the in-memory user_preferences dict to disk atomically."""
     tmp = PREFERENCES_FILE + ".tmp"
-    in_flight_paths.add(tmp)
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(tmp, "w") as f:
@@ -384,8 +383,26 @@ def save_preferences() -> None:
                 os.remove(tmp)
             except OSError:
                 pass
-    finally:
-        in_flight_paths.discard(tmp)
+
+
+async def _communicate_or_kill(
+    proc: asyncio.subprocess.Process, timeout: float
+) -> tuple[bytes, bytes]:
+    """Communicate with `proc` within `timeout`, killing and reaping on timeout or cancellation."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        wait_task = asyncio.create_task(proc.wait())
+        while not wait_task.done():
+            try:
+                await asyncio.shield(wait_task)
+            except asyncio.CancelledError:
+                pass
+        raise
 
 
 async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, int]:
@@ -399,12 +416,7 @@ async def run_cups_command(cmd: list[str], timeout: int = 5) -> tuple[str, str, 
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-        raise
+    stdout, stderr = await _communicate_or_kill(process, timeout=timeout)
     return stdout.decode(), stderr.decode(), process.returncode
 
 
@@ -558,7 +570,16 @@ async def pref_paper_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     user_preferences[key] = replace(draft, ts=0.0)
-    save_preferences()
+    save_task = asyncio.create_task(asyncio.to_thread(save_preferences))
+    try:
+        await asyncio.shield(save_task)
+    except asyncio.CancelledError:
+        while not save_task.done():
+            try:
+                await asyncio.shield(save_task)
+            except asyncio.CancelledError:
+                pass
+        raise
 
     # If saving normal mode, discard any pending half-queue files.
     if draft.number_up != 2:
@@ -656,23 +677,16 @@ async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Delete cached files from the data directory and clear caller's queued files."""
     chat_id = update.effective_chat.id
     # Clear only the calling chat's half-mode queue
-    entry = half_queue.pop(chat_id, None)
-    if entry:
-        for fp in entry.files:
-            try:
-                os.remove(fp)
-                logger.info("Cleared caller half-queue file on clean: %s", fp)
-            except OSError:
-                pass
+    discard_half_queue(chat_id)
 
-    # Preserve other chats' queued files as well as in-flight paths
+    # Preserve other chats' queued files, in-flight paths, and runtime preferences temp file
     other_queued = {
         fp
         for cid, q in half_queue.items()
         if cid != chat_id
         for fp in q.files
     }
-    skip_set = frozenset(other_queued | in_flight_paths)
+    skip_set = frozenset(other_queued | in_flight_paths | {PREFERENCES_FILE + ".tmp"})
     removed = await perform_cleanup_async(skip_set, min_age=0)
     await update.effective_message.reply_text(
         f"🗑️ Cleaned up {removed} cached file(s) from the data folder."
@@ -868,6 +882,23 @@ async def _flush_half_queue(
     )
 
 
+async def _download_tracked(file_obj, orig_ext: str) -> str:
+    """Download file_obj to a unique path under DATA_DIR while tracking in in_flight_paths."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
+    in_flight_paths.add(file_path)
+    try:
+        await file_obj.download_to_drive(file_path)
+    except BaseException:
+        in_flight_paths.discard(file_path)
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        raise
+    return file_path
+
+
 async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming photo or document and send it to the printer."""
     user = update.effective_user
@@ -909,19 +940,7 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
 
-        os.makedirs(DATA_DIR, exist_ok=True)
-        file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
-        in_flight_paths.add(file_path)
-        try:
-            await file_obj.download_to_drive(file_path)
-        except BaseException:
-            in_flight_paths.discard(file_path)
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
-            raise
-
+        file_path = await _download_tracked(file_obj, orig_ext)
         logger.info("Half-mode: queued file at %s", file_path)
 
         entry = half_queue.setdefault(chat_id, HalfQueueEntry())
@@ -965,19 +984,7 @@ async def print_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     file_obj, orig_ext = file_info
 
-    # Use a UUID-based filename to prevent collisions under concurrent prints
-    os.makedirs(DATA_DIR, exist_ok=True)
-    file_path = os.path.join(DATA_DIR, f"{uuid.uuid4().hex}{orig_ext}")
-    in_flight_paths.add(file_path)
-    try:
-        await file_obj.download_to_drive(file_path)
-    except BaseException:
-        in_flight_paths.discard(file_path)
-        try:
-            os.remove(file_path)
-        except OSError:
-            pass
-        raise
+    file_path = await _download_tracked(file_obj, orig_ext)
     logger.info("File saved at %s", file_path)
 
     await _print_and_reply(update, chat_id, [file_path], opts, "✅ Sent to printer!")
@@ -999,6 +1006,9 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
     """
     if not LP_BIN:
         raise RuntimeError("lp command not found — is cups-client installed?")
+
+    server = get_cups_server()
+    printer = get_printer_name()
 
     if not file_paths:
         raise RuntimeError("Internal error: print_file called with empty file list")
@@ -1034,15 +1044,11 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                m_stdout, m_stderr = await asyncio.wait_for(merge_proc.communicate(), timeout=MERGE_TIMEOUT)
+                m_stdout, m_stderr = await _communicate_or_kill(merge_proc, timeout=MERGE_TIMEOUT)
             except asyncio.TimeoutError:
-                merge_proc.kill()
-                await merge_proc.wait()
-                raise RuntimeError("Merging took too long (over 60 s) — the file may be too complex.")
-            except asyncio.CancelledError:
-                merge_proc.kill()
-                await merge_proc.wait()
-                raise
+                raise RuntimeError(
+                    f"Merging took too long (over {MERGE_TIMEOUT} s) — the file may be too complex."
+                )
 
             if merge_proc.returncode != 0:
                 if merge_proc.returncode < 0:
@@ -1051,9 +1057,6 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
                 raise RuntimeError(err_str or "Merge failed.")
 
             print_paths = [merged_path]
-
-        server = get_cups_server()
-        printer = get_printer_name()
 
         # Build: lp -h <server> -d <printer> -o fit-to-page -o media=<media> [options] <file(s)>
         cmd = [LP_BIN, "-h", server, "-d", printer, "-o", "fit-to-page", "-o", f"media={opts.media}"]
@@ -1076,17 +1079,11 @@ async def print_file(file_paths: list[str], opts: PrintOptions) -> None:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(lp_proc.communicate(), timeout=30)
+            stdout, stderr = await _communicate_or_kill(lp_proc, timeout=30)
         except asyncio.TimeoutError:
-            lp_proc.kill()
-            await lp_proc.wait()
             ex = RuntimeError("lp command timed out after 30 seconds")
             ex.cmd = cmd_str  # type: ignore[attr-defined]
             raise ex
-        except asyncio.CancelledError:
-            lp_proc.kill()
-            await lp_proc.wait()
-            raise
 
         if lp_proc.returncode != 0:
             err_str = stderr.decode().strip()[:MAX_STDERR_LENGTH]
@@ -1221,62 +1218,65 @@ def _on_cleanup_task_done(task: asyncio.Task) -> None:
         logger.error("Cleanup task crashed: %s", task.exception())
 
 
+async def _sweep_once(now: float) -> None:
+    """Perform a single eviction and cleanup pass at timestamp `now`."""
+    # Evict expired print_options entries that were never consumed (leak prevention)
+    expired_chats = [
+        cid for cid, entry in print_options.items()
+        if (now - entry.ts) >= SESSION_TTL
+    ]
+    for cid in expired_chats:
+        print_options.pop(cid, None)
+    if expired_chats:
+        logger.info("Evicted %d expired print option(s).", len(expired_chats))
+
+    # Evict stale last_print_time entries (prevents unbounded growth)
+    stale_rate = [
+        cid for cid, ts in last_print_time.items()
+        if (now - ts) >= SESSION_TTL
+    ]
+    for cid in stale_rate:
+        last_print_time.pop(cid, None)
+    if stale_rate:
+        logger.info("Evicted %d stale rate-limit entry(ies).", len(stale_rate))
+
+    # Evict expired half-queue entries and delete their files
+    expired_half = [
+        cid for cid, entry in half_queue.items()
+        if (now - entry.ts) >= SESSION_TTL
+    ]
+    for cid in expired_half:
+        entry = half_queue.pop(cid, None)
+        if entry:
+            for fp in entry.files:
+                try:
+                    os.remove(fp)
+                    logger.info("Evicted stale half-queue file: %s", fp)
+                except OSError:
+                    pass
+    if expired_half:
+        logger.info("Evicted %d expired half-queue(s).", len(expired_half))
+
+    # Remove leftover downloaded files, but protect files in active queue, in flight, or runtime preferences temp
+    logger.info("Running periodic data cleanup...")
+    try:
+        active_files = {
+            fp
+            for entry in half_queue.values()
+            for fp in entry.files
+        }
+        skip_set = frozenset(active_files | in_flight_paths | {PREFERENCES_FILE + ".tmp"})
+        removed = await perform_cleanup_async(skip_set, min_age=SESSION_TTL)
+        logger.info("Periodic cleanup removed %d file(s).", removed)
+    except Exception as e:
+        logger.error("Periodic cleanup failed: %s", e)
+
+
 async def cleanup_task() -> None:
     """Background task: evict stale print options and remove leftover data files."""
     while True:
         await asyncio.sleep(6 * 3600)  # every 6 hours
-        now = time.monotonic()
-
-        # Evict expired print_options entries that were never consumed (leak prevention)
-        expired_chats = [
-            cid for cid, entry in print_options.items()
-            if (now - entry.ts) >= SESSION_TTL
-        ]
-        for cid in expired_chats:
-            print_options.pop(cid, None)
-        if expired_chats:
-            logger.info("Evicted %d expired print option(s).", len(expired_chats))
-
-        # Evict stale last_print_time entries (prevents unbounded growth)
-        stale_rate = [
-            cid for cid, ts in last_print_time.items()
-            if (now - ts) >= SESSION_TTL
-        ]
-        for cid in stale_rate:
-            last_print_time.pop(cid, None)
-        if stale_rate:
-            logger.info("Evicted %d stale rate-limit entry(ies).", len(stale_rate))
-
-        # Evict expired half-queue entries and delete their files
-        expired_half = [
-            cid for cid, entry in half_queue.items()
-            if (now - entry.ts) >= SESSION_TTL
-        ]
-        for cid in expired_half:
-            entry = half_queue.pop(cid, None)
-            if entry:
-                for fp in entry.files:
-                    try:
-                        os.remove(fp)
-                        logger.info("Evicted stale half-queue file: %s", fp)
-                    except OSError:
-                        pass
-        if expired_half:
-            logger.info("Evicted %d expired half-queue(s).", len(expired_half))
-
-        # Remove leftover downloaded files, but protect files in active queue or in flight
-        logger.info("Running periodic data cleanup...")
-        try:
-            active_files = {
-                fp
-                for entry in half_queue.values()
-                for fp in entry.files
-            }
-            skip_set = frozenset(active_files | in_flight_paths)
-            removed = await perform_cleanup_async(skip_set, min_age=SESSION_TTL)
-            logger.info("Periodic cleanup removed %d file(s).", removed)
-        except Exception as e:
-            logger.error("Periodic cleanup failed: %s", e)
+        await _sweep_once(time.monotonic())
 
 
 def perform_cleanup(skip_paths: frozenset[str] | None = None, min_age: float = 0) -> int:
@@ -1376,7 +1376,7 @@ def build_application(token: str, allowed_chat_ids: list[int]) -> Application:
                 PREF_MODE: [CallbackQueryHandler(pref_mode_callback, pattern="^pref_mode_")],
                 PREF_PAPER: [CallbackQueryHandler(pref_paper_callback, pattern="^pref_paper_")],
             },
-            fallbacks=[CommandHandler("cancel", cancel_preferences)],
+            fallbacks=[CommandHandler("cancel", cancel_preferences, filters=new_message)],
             allow_reentry=True,
         )
     application.add_handler(pref_conv)
